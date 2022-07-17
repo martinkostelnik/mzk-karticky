@@ -5,3 +5,7 @@ images/
 page-txts/
 tasks/
 venv/
+error_file.txt
+src/__pycache__/
+src/timeout.py
+alignments-error/

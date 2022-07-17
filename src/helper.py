@@ -3,6 +3,10 @@ from collections import defaultdict
 import pandas as pd
 
 
+LABELS = ["Author", "Title", "Original title", "Publisher", "Pages", "Series", "Edition", "References", "ID",
+          "ISBN", "ISSN", "Topic", "Subtitle", "Date", "Institute", "Volume"]
+
+
 class DatabaseRecordPattern:
     def __init__(self, regex=None, keys=None):
         self.regex = regex

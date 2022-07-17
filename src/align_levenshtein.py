@@ -9,6 +9,8 @@ from pero_ocr.sequence_alignment import levenshtein_alignment, levenshtein_dista
 
 import helper
 
+from timeout import timeout, TimeoutError
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
@@ -63,11 +65,16 @@ def merge_db_records(data):
     return text, boundaries
 
 
-def save_mapping(db_mapping, path):
-    with open(path, "w") as file:
+# TODO: Change separator from '
+def save_mapping(db_mapping, output_path, transcription_path):
+    with open(transcription_path, "r") as transcription_file:
+        ocr = transcription_file.read()
+    
+    with open(output_path, "w") as file:
         for db_key in db_mapping:
             for line in db_mapping[db_key]:
-                file.write(f"\'{db_key}\' \'{line.transcription}\'\n")
+                index = ocr.find(line.transcription)
+                file.write(f"\'{db_key}\' \'{line.transcription}\' \'{index}\' \'{index + len(line.transcription)}\'\n")
 
 
 def cer(hyp, ref, case_sensitive=False):
@@ -109,16 +116,21 @@ def evaluate(candidate_keys, db_records, line):
     return cers
 
 
+# To find problematic files, a TimeoutError is raised after 60 seconds
+# https://stackoverflow.com/questions/2281850/timeout-function-if-it-takes-too-long-to-finish
+@timeout(60)
 def filter_and_sort_lines(db_record, lines):
     indices = list(range(len(lines)))
+    #print([line.transcription for line in lines])
 
     best_cer = 1.0
     best_combination = []
     
     for length in range(1, len(indices) + 1):
         for subset in itertools.combinations(indices, length):
-
+            #print(subset)
             for permutation in itertools.permutations(subset):
+                #print(permutation)
                 text = ' '.join([lines[index].transcription for index in permutation])
                 text_cer = cer(text, db_record)
 
@@ -147,6 +159,7 @@ def process_file(db_path, transcription_path, output_path, threshold):
 
     for line in lines:
         candidates = find_candidates(db_records, line)
+
         if len(candidates) > 0:
             cers = evaluate(candidates, db_records, line)
 
@@ -154,7 +167,15 @@ def process_file(db_path, transcription_path, output_path, threshold):
             db_records_mapping[candidates[min_index]].append(line)
 
     for key in db_records_mapping:
-        lines = filter_and_sort_lines(db_records[key], db_records_mapping[key])
+        # The exception handling is here to find problematic files, to be removed later (maybe)
+        try:
+            lines = filter_and_sort_lines(db_records[key], db_records_mapping[key])
+        except TimeoutError:
+            print(f"Timeout reached on {transcription_path.rpartition('/')[2]}")
+            with open ("error_file.txt", "a") as f:
+                f.write(f"{db_path.rpartition('/')[2]} {transcription_path.rpartition('/')[2]} db_records:{len(db_records)} db_records_mapping:{len(db_records_mapping)}\n")
+            return
+
         text_cer = cer(' '.join([line.transcription for line in lines]), db_records[key])
 
         if text_cer < threshold:
@@ -162,7 +183,7 @@ def process_file(db_path, transcription_path, output_path, threshold):
         else:
             db_records_mapping[key] = []
 
-    save_mapping(db_records_mapping, output_path)
+    save_mapping(db_records_mapping, output_path, transcription_path)
 
 
 def main():
@@ -177,7 +198,10 @@ def main():
 
         print(f"Processing db entry {db_filename} with ocr {ocr_filename}")
 
-        process_file(db_filename, ocr_filename, out_filename, args.threshold)
+        try:
+            process_file(db_filename, ocr_filename, out_filename, args.threshold)
+        except FileNotFoundError:
+            continue
 
     return 0
 

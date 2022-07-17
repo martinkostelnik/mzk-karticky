@@ -4,7 +4,7 @@ import argparse
 import typing
 
 from collections import defaultdict
-from pero_ocr.sequence_alignment import levenshtein_distance
+from helper import LABELS
 
 
 def parse_arguments():
@@ -30,19 +30,27 @@ def load_ocr(folder: str, filename: str) -> str:
         return f.read().replace('\n', '')
 
 
+# data[label] = [[text, from, to], ...]
 def load_alignment(folder: str, filename: str) -> str:
     path = os.path.join(folder, filename)
-    data = defaultdict(lambda: "")
+    data = {}
 
     with open(path, "r") as f:
         for line in f:
             s = line.split("'")
-            key = s[1]
-
-            if key in data:
-                data[key] += s[3]
-            else:
-                data[key] = s[3]
+            label = s[1]
+            
+            # TODO: Delete the exception handling after we remove all alignment files without 'from' 'to'
+            try:
+                if label not in data:
+                    data[label] = [[s[3], int(s[5]), int(s[7])]]
+                elif abs(int(data[label][-1][2]) + 1 - int(s[5])) <= 2: # if the label continues on next line
+                    data[label][-1][0] += s[3]            # append it to the previous record
+                    data[label][-1][2] = int(s[7])             # and update 'to' field
+                else:
+                    data[label].append([s[3], int(s[5]), int(s[7])])
+            except (IndexError, ValueError):
+                continue
 
     return data
 
@@ -51,8 +59,6 @@ def main() -> int:
     args = parse_arguments()
 
     annotations = load_annotations(args.json)
-
-    total_error = 0
 
     for annotated_file in annotations:
         if "label" in annotated_file: # Filter out wrong matches
@@ -64,15 +70,30 @@ def main() -> int:
             except FileNotFoundError:
                 continue
 
-            for annotation in annotated_file["label"]:
-                string_to_match = ocr[annotation["start"]:annotation["end"]].lower() # String from OCR annotated by person
-                label = annotation["labels"][0]
+            occurences = {} # { label: 0 for label in LABELS }
+            error = {} # { label: -1 for label in LABELS }
 
-                string_matching = alignment[label].lower() # String from the alignment script
+            # test file with multiple annotations
+            if annotated_file["id"] == 1571:
+                for annotation in annotated_file["label"]:
+                    annotated_string = ocr[annotation["start"]:annotation["end"]].lower() # Annotated string
+                    label = annotation["labels"][0]
 
-                total_error += levenshtein_distance(list(string_matching), list(string_to_match))
+                    occurences[label] = 1 if label not in occurences else occurences[label] + 1
 
-    print(f"Total error on all files is: {total_error}")
+                    if label not in alignment: # Label present in annotation but missing in alignment, error = 100 %
+                        error[label] = 1.0
+                    else:
+                        for aligned_string in alignment[label]:
+                            intersection = max(min(annotation["end"], aligned_string[2]) - max(annotation["start"], aligned_string[1]), 0)
+                            union = max(annotation["end"], aligned_string[2]) - min(annotation["start"], aligned_string[1])
+                            
+                            IoU = intersection / union
+
+                            error[label] = 1 - IoU if label not in error else error[label] + 1 - IoU
+
+                error = {label: error[label] / occurences[label] for label in error}
+                print(error)
 
     return 0
 
