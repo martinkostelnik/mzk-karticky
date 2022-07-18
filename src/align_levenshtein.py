@@ -19,6 +19,7 @@ def parse_arguments():
     parser.add_argument("--mapping", help="Path to file with mapping.")
     parser.add_argument("--output", help="Path to output folder.")
     parser.add_argument("--threshold", help="CER threshold for final filtering.", type=float, default=0.7)
+    parser.add_argument("--max-candidates", help="Maximum lines to consider as a field", type=int, default=5)
 
     args = parser.parse_args()
     return args
@@ -47,7 +48,8 @@ def load_transcription(path):
     lines = []
     with open(path, "r") as f:
         for line in f:
-            lines.append(TextLine(transcription=line[:-1])) # Omit "\n"
+            if len(line) > 2:
+                lines.append(TextLine(transcription=line[:-1])) # Omit "\n"
 
     return lines
 
@@ -65,16 +67,16 @@ def merge_db_records(data):
     return text, boundaries
 
 
-# TODO: Change separator from '
 def save_mapping(db_mapping, output_path, transcription_path):
     with open(transcription_path, "r") as transcription_file:
         ocr = transcription_file.read()
     
+    sep = chr(255)
     with open(output_path, "w") as file:
         for db_key in db_mapping:
             for line in db_mapping[db_key]:
                 index = ocr.find(line.transcription)
-                file.write(f"\'{db_key}\' \'{line.transcription}\' \'{index}\' \'{index + len(line.transcription)}\'\n")
+                file.write(f"{sep}{db_key}{sep} {sep}{line.transcription}{sep} {sep}{index}{sep} {sep}{index + len(line.transcription)}{sep}\n")
 
 
 def cer(hyp, ref, case_sensitive=False):
@@ -86,8 +88,12 @@ def cer(hyp, ref, case_sensitive=False):
 
 
 def is_candidate(alignment):
+    i = 0
     for db_char, line_char in alignment:
-        if line_char is not None:
+        if line_char is not None and db_char is not None and db_char.lower() == line_char.lower():
+            i += 1
+
+        if i >= 2:
             return True
 
     return False
@@ -98,7 +104,6 @@ def find_candidates(db_records, line):
 
     db_text, boundaries = merge_db_records(db_records)
     alignment = levenshtein_alignment(list(db_text), list(line.transcription))
-
     for key, start, end in zip(db_records, [0] + boundaries[:-1], boundaries):
         if is_candidate(alignment[start:end]):
             candidates.append(key)
@@ -121,16 +126,13 @@ def evaluate(candidate_keys, db_records, line):
 @timeout(60)
 def filter_and_sort_lines(db_record, lines):
     indices = list(range(len(lines)))
-    #print([line.transcription for line in lines])
 
     best_cer = 1.0
     best_combination = []
     
     for length in range(1, len(indices) + 1):
         for subset in itertools.combinations(indices, length):
-            #print(subset)
             for permutation in itertools.permutations(subset):
-                #print(permutation)
                 text = ' '.join([lines[index].transcription for index in permutation])
                 text_cer = cer(text, db_record)
 
@@ -143,18 +145,17 @@ def filter_and_sort_lines(db_record, lines):
     return lines
 
 
-def title_matched(mapping):
-    for key in mapping:
-        if helper.title_pattern.matches(key, "") and len(mapping[key]) > 0:
-            return True
+# def title_matched(mapping):
+#     for key in mapping:
+#         if helper.title_pattern.matches(key, "") and len(mapping[key]) > 0:
+#             return True
 
-    return False
+#     return False
 
 
-def process_file(db_path, transcription_path, output_path, threshold):
+def process_file(db_path, transcription_path, output_path, threshold, max_candidates):
     db_records = load_db_records(db_path)
     lines = load_transcription(transcription_path)
-
     db_records_mapping = defaultdict(list)
 
     for line in lines:
@@ -164,7 +165,8 @@ def process_file(db_path, transcription_path, output_path, threshold):
             cers = evaluate(candidates, db_records, line)
 
             min_index = np.argmin(cers)
-            db_records_mapping[candidates[min_index]].append(line)
+            if (len(db_records_mapping[candidates[min_index]])) < max_candidates:
+                db_records_mapping[candidates[min_index]].append(line)
 
     for key in db_records_mapping:
         # The exception handling is here to find problematic files, to be removed later (maybe)
@@ -172,8 +174,6 @@ def process_file(db_path, transcription_path, output_path, threshold):
             lines = filter_and_sort_lines(db_records[key], db_records_mapping[key])
         except TimeoutError:
             print(f"Timeout reached on {transcription_path.rpartition('/')[2]}")
-            with open ("error_file.txt", "a") as f:
-                f.write(f"{db_path.rpartition('/')[2]} {transcription_path.rpartition('/')[2]} db_records:{len(db_records)} db_records_mapping:{len(db_records_mapping)}\n")
             return
 
         text_cer = cer(' '.join([line.transcription for line in lines]), db_records[key])
@@ -199,7 +199,7 @@ def main():
         print(f"Processing db entry {db_filename} with ocr {ocr_filename}")
 
         try:
-            process_file(db_filename, ocr_filename, out_filename, args.threshold)
+            process_file(db_filename, ocr_filename, out_filename, args.threshold, args.max_candidates)
         except FileNotFoundError:
             continue
 
