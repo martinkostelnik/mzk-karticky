@@ -5,7 +5,7 @@ import numpy as np
 from collections import defaultdict
 
 from pero_ocr.document_ocr.layout import TextLine
-from pero_ocr.sequence_alignment import levenshtein_alignment, levenshtein_distance
+from pero_ocr.sequence_alignment import levenshtein_distance, levenshtein_alignment_substring
 
 import helper
 
@@ -103,7 +103,8 @@ def find_candidates(db_records, line):
     candidates = []
 
     db_text, boundaries = merge_db_records(db_records)
-    alignment = levenshtein_alignment(list(db_text), list(line.transcription))
+    #alignment = levenshtein_alignment(list(db_text), list(line.transcription))
+    alignment = levenshtein_alignment_substring(list(db_text), list(line.transcription))
     for key, start, end in zip(db_records, [0] + boundaries[:-1], boundaries):
         if is_candidate(alignment[start:end]):
             candidates.append(key)
