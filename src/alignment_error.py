@@ -14,8 +14,8 @@ def parse_arguments():
     parser.add_argument("--json", help="Path to JSON file with annotated data.")
     parser.add_argument("--alignments", help="Path to folder with the alignments.")
     parser.add_argument("--save", help="Save per-file errors to JSON.", action="store_true")
-    parser.add_argument("--info", help="Save example file with alignment and errors", action="store_true")
-    parser.add_argument("--ocr", help="Path to folder with ocr.")
+    parser.add_argument("--info", help="Save example file with alignment and errors. Must specify --ocr option", action="store_true")
+    parser.add_argument("--ocr", help="Path to folder with ocr. Used together with --info option.")
 
     args = parser.parse_args()
 
@@ -154,24 +154,18 @@ def main() -> int:
                         file_intersections[label] = min_intersection
                         file_unions[label] = min_union
 
-                    if i == file_index:
+                    if args.info and i == file_index:
                         annotation_text = ocr[annotation["start"] : annotation["end"]]
                         alignment_text = ocr[alig_from : alig_to]
 
                         example_file.append(f"Field: {label}\n")
                         example_file.append(f"Annotation: {annotation['start']}-{annotation['end']} ({annotation_text})\n")
                         example_file.append(f"Alignment: {alig_from}-{alig_to} ({alignment_text})\n")
-                        example_file.append(f"Error: {100 * min_error} % ({min_intersection} / {min_union} matched)\n\n")
+                        example_file.append(f"Error: {(100 * min_error):.2f} % ({min_intersection} / {min_union} matched)\n\n")
 
             file_error = {label: 1 - file_intersections[label] / file_unions[label] for label in file_intersections}
-            
-            try:
-                file_error["total_error"] = 1 - file_total_intersection / file_total_union
-            except ZeroDivisionError:
-                file_error["total_error"] = 1.0
-
+            file_error["total_error"] = 1.0 if not file_total_union else 1 - file_total_intersection / file_total_union
             file_error["filename"] = filename
-
             file_errors.append(file_error)
 
     field_errors = {label: 0.0 for label in LABELS}

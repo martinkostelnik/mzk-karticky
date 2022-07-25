@@ -9,3 +9,7 @@ error_file.txt
 src/__pycache__/
 src/timeout.py
 alignments-error/
+example_result.txt
+file_alignment_errors.json
+results.txt
+threshold-errors
