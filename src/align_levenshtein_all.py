@@ -95,6 +95,8 @@ def save_mapping(db_mapping, output_path, transcription_path):
         ocr = transcription_file.read()
     
     sep = chr(255)
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
     with open(output_path, "w") as file:
         for db_key in db_mapping:
             for line in db_mapping[db_key]:
@@ -197,7 +199,7 @@ def process_file(db_path, transcription_path, output_path, threshold, max_candid
         try:
             lines = filter_and_sort_lines(db_records[key], db_records_mapping[key])
         except TimeoutError:
-            print(f"Timeout reached on {transcription_path.rpartition('/')[2]}")
+            print(f"Timeout reached on {transcription_path}")
             return
 
         text_cer = cer(' '.join([line.transcription for line in lines]), db_records[key])
@@ -216,9 +218,9 @@ def main():
     mapping = helper.create_mapping(args.mapping)
 
     for ocr, id in mapping.items():
-        ocr_filename = os.path.join(args.transcription, f"{ocr.rpartition('/')[2]}.gif.xml.txt")
+        ocr_filename = os.path.join(args.transcription, f"{ocr}.gif.xml.txt")
         db_filename = os.path.join(args.db_record, f"{id}.txt")
-        out_filename = os.path.join(args.output, f"{ocr.rpartition('/')[2]}.gif.xml.txt")
+        out_filename = os.path.join(args.output, f"{ocr}.gif.xml.txt")
 
         print(f"Processing db entry {db_filename} with ocr {ocr_filename}")
 
