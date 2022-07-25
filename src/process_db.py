@@ -28,15 +28,7 @@ INV_MAPPING = {v: k for k, v in MAPPING.items()}
 def split_line(line):
     """ The '$$' is used as field separator in the individual DB records 
     """
-
-    # res = {}
-
-    # s = line.split("$$")
-
-    # for part in s[1:]:
-    #     res[part[0]] = part[1:]
-
-    # return res
+    
     return { part[0]: part[1:] for part in line.split("$$")[1:] }
 
 

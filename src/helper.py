@@ -151,7 +151,7 @@ def normalize_author(text):
 
 def clean_db_record(in_path, out_path):
     """ This function takes file containing raw DB record and cleans it.
-        Removes all lines not starting with correct ID and removes unneccessary columns.
+        Removes all lines not starting with correct ID and removes unneccessary columns (dollar entries).
         Stores the result in new file in format "<key> <content>"
     """
 
