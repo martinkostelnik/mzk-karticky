@@ -23,13 +23,20 @@ if __name__ == "__main__":
         data = prepare_training_data(args.ocr, args.alig)
 
         trainer_settings = {
-            "train_ratio": 0.8,
+            "train_ratio": 0.7,
+            "val_ratio" : 0.15,
             "batch_size": 4,
-            "epochs": 2,
+            "epochs": 15,
+            "learning_rate": 0.001,
+            "max_grad_norm": 10,
         }
 
-        trainer = Trainer(data=data, settings=trainer_settings)
+        model = NerBert()
+
+        trainer = Trainer(data=data, settings=trainer_settings, model=model)
+
         trainer.train()
+        trainer.evaluate()
     
     else:
         pass

@@ -96,7 +96,7 @@ def save_mapping(db_mapping, output_path, transcription_path):
     
     sep = chr(255)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
+    
     with open(output_path, "w") as file:
         for db_key in db_mapping:
             for line in db_mapping[db_key]:
@@ -216,6 +216,8 @@ def main():
     args = parse_arguments()
 
     mapping = helper.create_mapping(args.mapping)
+
+    os.makedirs(args.output, exist_ok=True)
 
     for ocr, id in mapping.items():
         ocr_filename = os.path.join(args.transcription, f"{ocr}.gif.xml.txt")

@@ -8,7 +8,7 @@ import torch
 from spacy.training import offsets_to_biluo_tags
 from transformers import BertTokenizerFast
 
-# TODO: Import LABELS from helper
+# TODO: Import LABELS from helper?
 LABELS = ["Author", "Title", "Original title", "Publisher", "Pages", "Series", "Edition", "References", "ID",
           "ISBN", "ISSN", "Topic", "Subtitle", "Date", "Institute", "Volume"]
 
@@ -44,7 +44,7 @@ def prepare_training_data(ocr_path: str, alig_path: str) -> pd.DataFrame:
                     offset_format.append((int(s[5]), int(s[7]), s[1]))
 
             with open(os.path.join(ocr_path, file), "r") as f:
-                text = f.read().replace("\n", " ")
+                text = f.read().replace("-\n", "").replace("\n", " ")
 
             #TODO: Solve problems with overlapping alignments
             try:
@@ -56,6 +56,7 @@ def prepare_training_data(ocr_path: str, alig_path: str) -> pd.DataFrame:
     return pd.DataFrame(res, columns=["text", "bilou"])
 
 
+# TODO: Perhaps we should save the tokenizer (same as model) and not create new one for each DataSet instance?
 class DataSet(torch.utils.data.Dataset):
     def __init__(self, df,  max_len: int=512):
         self.df = df
