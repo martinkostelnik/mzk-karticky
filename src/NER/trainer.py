@@ -11,9 +11,8 @@ from sklearn.metrics import accuracy_score
 from seqeval.metrics import classification_report
 
 
-# TODO: Split into train and test test.
 class Trainer:
-    def __init__(self, data: pd.DataFrame, settings: dict, model: NerBert=NerBert()):
+    def __init__(self, data: pd.DataFrame, settings: dict, model):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # Split dataset into train, val and test
@@ -29,6 +28,11 @@ class Trainer:
         self.model = model.to(self.device)
         self.optim = torch.optim.Adam(self.model.parameters(), lr=settings["learning_rate"])
         self.max_norm = settings["max_grad_norm"]
+
+        # Disable BERT training
+        for name, param in self.model.named_parameters():
+            if "classifier" not in name:
+                param.requires_grad = False
 
     def train(self):
         self.model.train()
@@ -59,7 +63,7 @@ class Trainer:
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
 
-                outputs = self.model(input_ids, attention_mask, labels)
+                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
                 loss, logits = outputs[0], outputs[1]
 
                 epoch_loss_train += loss.item()
@@ -81,7 +85,7 @@ class Trainer:
                     attention_mask = batch["attention_mask"].to(self.device)
                     labels = batch["labels"].to(self.device)
 
-                    outputs = self.model(input_ids, attention_mask, labels)
+                    outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
                     loss, logits = outputs[0], outputs[1]
 
                     epoch_loss_val += loss.item()
@@ -98,7 +102,8 @@ class Trainer:
     def evaluate(self):
         self.model.eval()
 
-        # Preapre loader
+        # Prepare loader
+        # test_dataset = DataSet(self.train_dataset) # DEBUG, check overtraining
         test_dataset = DataSet(self.test_dataset)
         test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
 
@@ -117,7 +122,7 @@ class Trainer:
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
 
-                outputs = self.model(input_ids, attention_mask, labels)
+                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
                 loss, logits = outputs[0], outputs[1]
 
                 test_loss += loss.item()
@@ -130,17 +135,17 @@ class Trainer:
                 
                 steps += 1
 
-        # TODO: This might not be correct, but it throws no exceptions in classification_report()
-        l = [[IDS2LABELS[id.item()] for id in l] for l in report_labels]
-        p = [[IDS2LABELS[id.item()] for id in l] for l in report_preds]
+        l = [[IDS2LABELS[id.item()] for id in l_] for l_ in report_labels]
+        p = [[IDS2LABELS[id.item()] for id in p_] for p_ in report_preds]
 
         print(f"Test loss: {test_loss / steps}")
         print(f"Test acc: {test_acc / steps}")
         print(classification_report(l, p, zero_division=0))
 
+    # TODO: NUM_LABELS IN THIS CODE
     def calculate_acc(self, labels, logits):
         flattened_targets = labels.view(-1) # shape (batch_size * seq_len,)
-        active_logits = logits.view(-1, 65) # shape (batch_size * seq_len, num_labels)
+        active_logits = logits.view(-1, 33) # shape (batch_size * seq_len, num_labels)
         flattened_predictions = torch.argmax(active_logits, axis=1) # shape (batch_size * seq_len,)
         active_accuracy = labels.view(-1) != -100 # shape (batch_size, seq_len)
         

@@ -8,30 +8,24 @@ import torch
 from spacy.training import offsets_to_biluo_tags
 from transformers import BertTokenizerFast
 
+
 # TODO: Import LABELS from helper?
 LABELS = ["Author", "Title", "Original title", "Publisher", "Pages", "Series", "Edition", "References", "ID",
           "ISBN", "ISSN", "Topic", "Subtitle", "Date", "Institute", "Volume"]
 
-FORMAT = ["B", "I", "L", "U"]
+FORMAT = ["B", "I"]
 
 LABELS2IDS = {f"{c}-{label}": i*len(FORMAT) + j + 1 for i, label in enumerate(LABELS) for j, c in enumerate(FORMAT)}
 LABELS2IDS["O"] = 0
 
-# TODO: Solve the problem with the "-" label. This label gets added due to some tokenization error. Check the docs and try
-# to fix this. The model should work fine even with this issue.
-LABELS2IDS["-"] = 0
-
-IDS2LABELS = {v: k for k, v in LABELS2IDS.items() if k != "-"}
+IDS2LABELS = {v: k for k, v in LABELS2IDS.items()}
 
 
-# TODO: Maybe use different tokenization instead of spacy. Maybe write our own? It would also be possible to use IOU format
-# instead. Also we might need to change this if we change output format of alignment script.
 def prepare_training_data(ocr_path: str, alig_path: str) -> pd.DataFrame:
     """This function takes in the ocrs and alignments and creates a dataframe 
        containing two columns as (ocr, bilou-format).
     """
 
-    nlp = spacy.load("en_core_web_sm")
     res = []
 
     for root, dirs, files in os.walk(alig_path):
@@ -44,14 +38,41 @@ def prepare_training_data(ocr_path: str, alig_path: str) -> pd.DataFrame:
                     offset_format.append((int(s[5]), int(s[7]), s[1]))
 
             with open(os.path.join(ocr_path, file), "r") as f:
-                text = f.read().replace("-\n", "").replace("\n", " ")
+                text = f.read()
 
-            #TODO: Solve problems with overlapping alignments
-            try:
-                bilou_format = offsets_to_biluo_tags(nlp(text), offset_format)
-                res.append((text, bilou_format))
-            except ValueError:
-                continue
+            offset_format.sort(key=lambda x: x[0])
+
+            beginning = text[0:offset_format[0][0]].split()
+            tokens = [[word, "O"] for word in beginning]
+
+            for i, item in enumerate(offset_format):
+                substr = text[item[0]:item[1]].split()
+
+                tokens.extend([[word, item[2]] for word in substr])
+
+                try:
+                    next_ = text[item[1]:offset_format[i+1][0]].split()
+                    tokens.extend([[word, "O"] for word in next_])
+                except IndexError:
+                    end = text[item[1]:].split()
+                    tokens.extend([[word, "O"] for word in end])
+
+            current = ""
+            for token in tokens:
+                if token[1] == "O":
+                    current = "O"
+                    continue
+
+                tmp = token[1]
+                token[1] = f"B-{token[1]}" if token[1] != current else f"I-{token[1]}"
+                current = tmp
+
+            item = ([token[0] for token in tokens], [token[1] for token in tokens])
+
+            if len(item[0]) != len(item[1]):
+                print("ERROR IN TOKENIZATION, LENGTHS DO NOT MATCH")
+
+            res.append(item)
 
     return pd.DataFrame(res, columns=["text", "bilou"])
 
@@ -61,7 +82,7 @@ class DataSet(torch.utils.data.Dataset):
     def __init__(self, df,  max_len: int=512):
         self.df = df
         self.len = len(df)
-        self.tokenizer = BertTokenizerFast.from_pretrained("bert-base-multilingual-cased")
+        self.tokenizer = BertTokenizerFast.from_pretrained("bert-base-multilingual-uncased")
         self.max_len=max_len
 
     # https://colab.research.google.com/github/NielsRogge/Transformers-Tutorials/blob/master/BERT/Custom_Named_Entity_Recognition_with_BERT_only_first_wordpiece.ipynb#scrollTo=Eh3ckSO0YMZW
@@ -69,7 +90,7 @@ class DataSet(torch.utils.data.Dataset):
         text = self.df.text[index]
         bilou = self.df.bilou[index]
 
-        encoding = self.tokenizer(text.split(),
+        encoding = self.tokenizer(text,
                                   padding="max_length",
                                   is_split_into_words=True,
                                   return_offsets_mapping=True,
