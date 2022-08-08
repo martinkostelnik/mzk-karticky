@@ -116,7 +116,7 @@ def save_mapping(db_mapping, output_path, all_lines):
 
     sep = '\t'
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
+    
     with open(output_path, "w") as file:
         for db_key in db_mapping:
             borders = db_mapping[db_key]
@@ -401,6 +401,8 @@ def process_mapping_item(data, transcription, db_record, output, threshold, max_
 
 def main():
     args = parse_arguments()
+
+    os.makedirs(args.output, exist_ok=True)
 
     mapping = helper.create_mapping(args.mapping)
     processing_function = partial(process_mapping_item, transcription=args.transcription,
