@@ -8,6 +8,7 @@ class NerBert(torch.nn.Module):
         super().__init__()
         
         self.bert = BertForTokenClassification.from_pretrained("bert-base-multilingual-uncased", num_labels=65)
+
         
     def forward(self, input_id, attention_mask, labels):
         return self.bert(input_ids=input_id, attention_mask=attention_mask, labels=labels)

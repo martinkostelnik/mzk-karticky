@@ -12,38 +12,35 @@ from seqeval.metrics import classification_report
 
 
 class Trainer:
-    def __init__(self, data: pd.DataFrame, settings: dict, model):
+    def __init__(self, settings: dict, model, tokenizer):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        self.tokenizer = tokenizer
+
         # Split dataset into train, val and test
-        np.random.seed(42)
-        self.train_dataset, self.val_dataset, self.test_dataset = np.split(data.sample(frac=1, random_state=42), [int(settings["train_ratio"]*len(data)), int((1 - settings["val_ratio"])*len(data))])
-        self.train_dataset = self.train_dataset.reset_index()
-        self.val_dataset = self.val_dataset.reset_index()
-        self.test_dataset = self.test_dataset.reset_index()
+        # np.random.seed(42)
+        # self.train_dataset, self.val_dataset, self.test_dataset = np.split(data.sample(frac=1, random_state=42), [int(settings["train_ratio"]*len(data)), int((1 - settings["val_ratio"])*len(data))])
+        # self.train_dataset = self.train_dataset.reset_index()
+        # self.val_dataset = self.val_dataset.reset_index()
+        # self.test_dataset = self.test_dataset.reset_index()
         
         # Set training settings
         self.epochs = settings["epochs"]
-        self.batch_size = settings["batch_size"]
+        # self.batch_size = settings["batch_size"]
         self.model = model.to(self.device)
         self.optim = torch.optim.Adam(self.model.parameters(), lr=settings["learning_rate"])
         self.max_norm = settings["max_grad_norm"]
+        self.num_labels = settings["num_labels"]
+        self.examples = settings["examples"]
 
         # Disable BERT training
-        for name, param in self.model.named_parameters():
-            if "classifier" not in name:
-                param.requires_grad = False
+        if not settings["bert"]:
+            for name, param in self.model.named_parameters():
+                if "classifier" not in name:
+                    param.requires_grad = False
 
-    def train(self):
+    def train(self, train_data_loader, val_data_loader):
         self.model.train()
-        
-        # Prepare data loaders
-        train_dataset = DataSet(self.train_dataset)
-        train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
-
-        val_dataset = DataSet(self.val_dataset)
-        val_data_loader = torch.utils.data.DataLoader(val_dataset, batch_size=self.batch_size, shuffle=True,num_workers=0)
-
         best_epoch = np.inf
 
         # Start training
@@ -58,7 +55,7 @@ class Trainer:
 
             # Training loop
             self.model.train()
-            for batch in train_data_loader:
+            for i, batch in enumerate(train_data_loader):
                 input_ids = batch["input_ids"].to(self.device)
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
@@ -77,6 +74,12 @@ class Trainer:
 
                 train_steps += 1
 
+                if i == 0:
+                    example_ids = input_ids
+                    example_logits = logits
+                    example_labels = labels
+                    example_offset_mapping = batch["offset_mapping"]
+
             # Validation loop
             self.model.eval()
             with torch.no_grad():
@@ -94,18 +97,17 @@ class Trainer:
                     val_steps += 1
 
             if epoch_loss_val / val_steps < best_epoch:
-                torch.save(self.model.state_dict(), r"model/nerbert.pt")
+                self.model.save_pretrained(r"model")
+                self.tokenizer.save_vocabulary(r"model")
                 best_epoch = epoch_loss_val / val_steps
 
             print(f"Epoch {epoch+1} | Loss: {epoch_loss_train / train_steps} | Acc: {epoch_acc_train / train_steps} | Val_Loss: {epoch_loss_val / val_steps} | Val_Acc: {epoch_acc_val / val_steps}")
+            
+            if self.examples:
+                self.print_epoch_example(example_logits, example_labels, example_ids, example_offset_mapping)
 
-    def evaluate(self):
+    def evaluate(self, test_data_loader):
         self.model.eval()
-
-        # Prepare loader
-        # test_dataset = DataSet(self.train_dataset) # DEBUG, check overtraining
-        test_dataset = DataSet(self.test_dataset)
-        test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
 
         test_loss = 0
         test_acc = 0
@@ -142,10 +144,9 @@ class Trainer:
         print(f"Test acc: {test_acc / steps}")
         print(classification_report(l, p, zero_division=0))
 
-    # TODO: NUM_LABELS IN THIS CODE
     def calculate_acc(self, labels, logits):
         flattened_targets = labels.view(-1) # shape (batch_size * seq_len,)
-        active_logits = logits.view(-1, 33) # shape (batch_size * seq_len, num_labels)
+        active_logits = logits.view(-1, self.num_labels) # shape (batch_size * seq_len, num_labels)
         flattened_predictions = torch.argmax(active_logits, axis=1) # shape (batch_size * seq_len,)
         active_accuracy = labels.view(-1) != -100 # shape (batch_size, seq_len)
         
@@ -153,3 +154,47 @@ class Trainer:
         predictions_acc = torch.masked_select(flattened_predictions, active_accuracy)
 
         return accuracy_score(labels_acc.cpu().numpy(), predictions_acc.cpu().numpy()), labels_acc, predictions_acc
+
+    def print_epoch_example(self, logits_, labels_, ids_, offset_mapping_):
+        for logits, labels, ids, offset_mapping in zip(logits_, labels_, ids_, offset_mapping_):
+            active_logits = logits.view(-1, self.num_labels)
+            flattened_predictions = torch.argmax(active_logits, axis=1)
+
+            tokens = self.tokenizer.convert_ids_to_tokens(ids.squeeze().tolist())
+            token_predictions = [IDS2LABELS[i] for i in flattened_predictions.cpu().numpy()]
+            wp_preds = list(zip(tokens, token_predictions))
+
+            prediction = []
+            for token_pred, mapping in zip(wp_preds, offset_mapping.squeeze().tolist()):
+            #only predictions on first word pieces are important
+                if mapping[0] == 0 and mapping[1] != 0:
+                    prediction.append(token_pred[1])
+                else:
+                    continue
+
+            out_labels = []
+
+            for label in labels:
+                try:
+                    out_labels.append(IDS2LABELS[label.item()])
+                except KeyError:
+                    out_labels.append("-")
+            
+            l = 0
+            for i, token in enumerate(tokens):
+                if token == "[SEP]":
+                    break
+                l = i
+
+            tokens_print = "Tokens:       "
+            truth_print =  "Ground truth: "
+            pred_print =   "Prediction:   "
+
+            for t, o, p in zip(tokens[:l+1], out_labels[:l+1], token_predictions[:l+1]):
+                tokens_print += f"{t:<16}"
+                truth_print += f"{o:<16}"
+                pred_print += f"{p:<16}"
+
+            print(f"\n{tokens_print}")
+            print(truth_print)
+            print(f"{pred_print}\n")
