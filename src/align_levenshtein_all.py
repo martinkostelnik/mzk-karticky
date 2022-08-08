@@ -5,11 +5,32 @@ import numpy as np
 from collections import defaultdict
 
 from pero_ocr.document_ocr.layout import TextLine
-from pero_ocr.sequence_alignment import levenshtein_distance, levenshtein_alignment_substring
+from pero_ocr.sequence_alignment import levenshtein_distance, levenshtein_distance_substring, levenshtein_alignment_substring
+
+from multiprocessing import Pool
+from functools import partial
 
 import helper
 
-from timeout import timeout, TimeoutError
+# from timeout import timeout, TimeoutError
+
+
+class Border:
+    def __init__(self, start, end):
+        if start > end:
+            start, end = end, start
+
+        self.start = start
+        self.end = end
+
+    def __str__(self):
+        return f"{self.start}:{self.end}"
+
+    def intersects(self, other_border):
+        return self.start < other_border.start < self.end or self.start < other_border.end < self.end
+
+    def is_inside(self, other_border):
+        return  self.start < other_border.start < self.end and self.start < other_border.end < self.end
 
 
 """
@@ -72,7 +93,7 @@ def load_transcription(path):
     with open(path, "r") as f:
         for line in f:
             if len(line) > 2:
-                lines.append(TextLine(transcription=line[:-1])) # Omit "\n"
+                lines.append(TextLine(transcription=line.strip()))
 
     return lines
 
@@ -90,26 +111,31 @@ def merge_db_records(data):
     return text, boundaries
 
 
-def save_mapping(db_mapping, output_path, transcription_path):
-    with open(transcription_path, "r") as transcription_file:
-        ocr = transcription_file.read()
-    
-    sep = chr(255)
+def save_mapping(db_mapping, output_path, all_lines):
+    text = ' '.join(line.transcription for line in all_lines)
+
+    sep = '\t'
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     with open(output_path, "w") as file:
         for db_key in db_mapping:
-            for line in db_mapping[db_key]:
-                index = ocr.find(line.transcription)
-                file.write(f"{sep}{db_key}{sep} {sep}{line.transcription}{sep} {sep}{index}{sep} {sep}{index + len(line.transcription)}{sep}\n")
+            borders = db_mapping[db_key]
+            for border in borders:
+                if border is not None:
+                    file.write(f"{db_key}{sep}{text[border.start:border.end]}{sep}{border.start}{sep}{border.end}\n")
 
 
-def cer(hyp, ref, case_sensitive=False):
+def cer(hyp, ref, case_sensitive=False, substring=False):
     if not case_sensitive:
         hyp = hyp.lower()
         ref = ref.lower()
 
-    return levenshtein_distance(list(hyp), list(ref)) / len(ref)
+    if substring:
+        f = levenshtein_distance_substring
+    else:
+        f = levenshtein_distance
+
+    return f(list(hyp), list(ref)) / len(ref)
 
 
 def is_candidate(alignment):
@@ -149,13 +175,13 @@ def evaluate(candidate_keys, db_records, line):
 
 # To find problematic files, a TimeoutError is raised after 60 seconds
 # https://stackoverflow.com/questions/2281850/timeout-function-if-it-takes-too-long-to-finish
-@timeout(60)
+# @timeout(60)
 def filter_and_sort_lines(db_record, lines):
     indices = list(range(len(lines)))
 
     best_cer = 1.0
     best_combination = []
-    
+
     for length in range(1, len(indices) + 1):
         for subset in itertools.combinations(indices, length):
             for permutation in itertools.permutations(subset):
@@ -179,57 +205,214 @@ def filter_and_sort_lines(db_record, lines):
 #     return False
 
 
+def find_substring(text, line):
+    alignment = levenshtein_alignment_substring(list(text), list(line))
+    for i in range(len(alignment)):
+        if alignment[i][1] is not None:
+            break
+
+    for j in range(len(alignment)-1, -1, -1):
+        if alignment[j][1] is not None:
+            break
+
+    return text[i:j+1]
+
+
+def merge_consecutive_borders(borders):
+    if len(borders) == 0:
+        return borders
+
+    new_borders = []
+    start = borders[0].start
+    end = borders[0].end
+
+    for current_border, next_border in zip(borders[:-1], borders[1:]):
+        if current_border.end + 1 == next_border.start:
+            end = next_border.end
+        else:
+            new_borders.append(Border(start, end))
+            start = next_border.start
+            end = next_border.end
+
+    new_borders.append(Border(start, end))
+    return new_borders
+
+
+def get_borders(all_lines, key_lines, db_record):
+    all_text = ' '.join(line.transcription for line in all_lines)
+    key_text = ' '.join(line.transcription for line in key_lines)
+
+    alignment = levenshtein_alignment_substring(list(key_text), list(db_record))
+
+    for first_line_start in range(len(alignment)):
+        if alignment[first_line_start][1] is not None:
+            break
+
+    for last_line_end in range(len(alignment)-1, -1, -1):
+        if alignment[last_line_end][1] is not None:
+            break
+
+    borders = []
+    for i, line in enumerate(key_lines):
+        line_start = all_text.index(line.transcription)
+        line_end = line_start + len(line.transcription)
+
+        if i == 0:
+            line_start += first_line_start
+
+        if i == len(key_lines) - 1:
+            line_end = line_start + last_line_end + 1
+
+        borders.append(Border(line_start, line_end))
+
+    borders = merge_consecutive_borders(borders)
+    return borders
+
+
+def extract_text(all_lines, borders):
+    all_text = ' '.join(line.transcription for line in all_lines)
+    text_parts = [all_text[b.start:b.end].strip() for b in borders]
+    return ' '.join(text_parts)
+
+
+def refine_borders(left_border, right_border, spaces):
+    inside_spaces = [space for space in spaces if left_border <= space <= right_border]
+
+    if len(inside_spaces) == 1:
+        return inside_spaces[0]
+
+    elif len(inside_spaces) > 1:
+        return inside_spaces[len(inside_spaces)//2]
+
+    else:
+        left_spaces = [space for space in spaces if space < left_border]
+        right_spaces = [space for space in spaces if space > right_border]
+
+        left_space = max(left_spaces) if len(left_spaces) > 0 else None
+        right_space = min(right_spaces) if len(right_spaces) > 0 else None
+
+        if left_space is None and right_space is None:
+            return (left_border + right_border) // 2
+
+        elif left_space is None:
+            return right_space
+
+        elif right_space is None:
+            return left_space
+
+        else:
+            if abs(left_space - left_border) < abs(right_space - right_border):
+                return left_space
+
+            else:
+                return right_space
+
+
+def solve_overlapping_borders(db_records_mapping, lines):
+    text = ' '.join([line.transcription for line in lines])
+    spaces = [i for i, c in enumerate(text) if c == " "]
+
+    for key1 in db_records_mapping:
+        for key2 in db_records_mapping:
+            if key1 != key2:
+                for index1, border1 in enumerate(db_records_mapping[key1]):
+                    if border1 is not None:
+                        for index2, border2 in enumerate(db_records_mapping[key2]):
+                            if border2 is not None:
+                                if border1.intersects(border2):
+                                    if border1.is_inside(border2):
+                                        db_records_mapping[key1][index1] = None
+
+                                    elif border2.is_inside(border1):
+                                        db_records_mapping[key2][index2] = None
+
+                                    elif border1.start < border2.start < border1.end:
+                                        refined_border = refine_borders(border2.start, border1.end, spaces)
+                                        border1.end = refined_border
+                                        border2.start = refined_border
+
+                                    else:
+                                        refined_border = refine_borders(border1.start, border2.end, spaces)
+                                        border1.start = refined_border
+                                        border2.end = refined_border
+
+
 def process_file(db_path, transcription_path, output_path, threshold, max_candidates):
     db_records = load_db_records(db_path)
-    lines = load_transcription(transcription_path)
+    all_lines = load_transcription(transcription_path)
     db_records_mapping = defaultdict(list)
 
-    for line in lines:
+    for line in all_lines:
         candidates = find_candidates(db_records, line)
 
         if len(candidates) > 0:
             cers = evaluate(candidates, db_records, line)
 
             min_index = np.argmin(cers)
-            if (len(db_records_mapping[candidates[min_index]])) < max_candidates:
-                db_records_mapping[candidates[min_index]].append(line)
+            db_records_mapping[candidates[min_index]].append(line)
 
     for key in db_records_mapping:
+        if len(db_records_mapping[key]) > max_candidates:
+            print(f"Too many lines for key '{key}' ({len(db_records_mapping[key])}).")
+            db_records_mapping[key] = []
+            continue
+
         # The exception handling is here to find problematic files, to be removed later (maybe)
         try:
-            lines = filter_and_sort_lines(db_records[key], db_records_mapping[key])
+            key_lines = filter_and_sort_lines(db_records[key], db_records_mapping[key])
+
         except TimeoutError:
             print(f"Timeout reached on {transcription_path}")
-            return
+            db_records_mapping[key] = []
+            continue
 
-        text_cer = cer(' '.join([line.transcription for line in lines]), db_records[key])
+        borders = get_borders(all_lines, key_lines, db_records[key])
+        text = extract_text(all_lines, borders)
+        text_cer = cer(text, db_records[key])
 
         if text_cer < threshold:
-            db_records_mapping[key] = lines
+            db_records_mapping[key] = borders
         else:
             db_records_mapping[key] = []
 
-    save_mapping(db_records_mapping, output_path, transcription_path)
+    solve_overlapping_borders(db_records_mapping, all_lines)
+    save_mapping(db_records_mapping, output_path, all_lines)
+
+
+def process_mapping_item(data, transcription, db_record, output, threshold, max_candidates):
+    ocr, id = data
+    ocr_filename = os.path.join(transcription, f"{ocr}.gif.xml.txt")
+    db_filename = os.path.join(db_record, f"{id}.txt")
+    out_filename = os.path.join(output, f"{ocr}.gif.xml.txt")
+
+    print(f"Processing db entry {db_filename} with ocr {ocr_filename}")
+
+    if os.path.isfile(out_filename):
+        print(f"File '{out_filename}' already exists.")
+        return 2
+
+    try:
+        process_file(db_filename, ocr_filename, out_filename, threshold, max_candidates)
+    except FileNotFoundError:
+        return 1
+
+    return 0
 
 
 def main():
     args = parse_arguments()
 
-    mapping = helper.create_mapping(args.mapping)
-
     os.makedirs(args.output, exist_ok=True)
 
-    for ocr, id in mapping.items():
-        ocr_filename = os.path.join(args.transcription, f"{ocr}.gif.xml.txt")
-        db_filename = os.path.join(args.db_record, f"{id}.txt")
-        out_filename = os.path.join(args.output, f"{ocr}.gif.xml.txt")
+    mapping = helper.create_mapping(args.mapping)
+    processing_function = partial(process_mapping_item, transcription=args.transcription,
+                                                        db_record=args.db_record,
+                                                        output=args.output,
+                                                        threshold=args.threshold,
+                                                        max_candidates=args.max_candidates)
 
-        print(f"Processing db entry {db_filename} with ocr {ocr_filename}")
-
-        try:
-            process_file(db_filename, ocr_filename, out_filename, args.threshold, args.max_candidates)
-        except FileNotFoundError:
-            continue
+    pool = Pool(processes=4)
+    pool.map(processing_function, mapping.items())
 
     return 0
 

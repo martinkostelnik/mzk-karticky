@@ -66,7 +66,7 @@ def generate_db_records(db_key, text):
     parts = split_line(text)
     
     if author_pattern.matches(db_key, text):
-        return {"Author": normalize_author(text)}
+        return {"Author": parts["a"]}
 
     if title_pattern.matches(db_key, text):
         return {"Title": parts["a"], "Subtitle": parts["b"]}
@@ -127,26 +127,6 @@ def split_line(line):
         d[part[0]] = part[1:]
 
     return d
-
-
-def normalize_author(text):
-    second_comma = text.find(',', text.find(',') + 1)
-    if second_comma != -1:
-        text = text[:second_comma]
-
-    words = []
-    for word in text.split():
-        contains_number = any(['0' <= char <= '9' for char in word])
-        is_aut = word == "aut"
-
-        if contains_number or is_aut:
-            break
-
-        words.append(word)
-
-    text = ' '.join(words)
-
-    return text
 
 
 def clean_db_record(in_path, out_path):
