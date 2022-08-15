@@ -3,7 +3,7 @@ import typing
 import argparse
 from collections import defaultdict
 
-from helper import create_mapping
+from src.helper import create_mapping
 
 
 def parse_arguments():

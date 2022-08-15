@@ -10,9 +10,9 @@ from pero_ocr.sequence_alignment import levenshtein_distance, levenshtein_distan
 from multiprocessing import Pool
 from functools import partial
 
-import helper
+from src import helper
 
-# from timeout import timeout, TimeoutError
+from timeout import timeout, TimeoutError
 
 
 class Border:
@@ -90,6 +90,7 @@ def load_db_records(path):
 
 def load_transcription(path):
     lines = []
+    
     with open(path, "r") as f:
         for line in f:
             if len(line) > 2:
@@ -115,7 +116,11 @@ def save_mapping(db_mapping, output_path, all_lines):
     text = ' '.join(line.transcription for line in all_lines)
 
     sep = '\t'
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Comment this to align 200 hand annotated
+    # os.makedirs(os.path.dirname(output_path), exist_ok=True)
+   
+    output_path = os.path.join(output_path.partition("/")[0], output_path.rpartition("/")[2])
     
     with open(output_path, "w") as file:
         for db_key in db_mapping:
@@ -154,7 +159,6 @@ def find_candidates(db_records, line):
     candidates = []
 
     db_text, boundaries = merge_db_records(db_records)
-    #alignment = levenshtein_alignment(list(db_text), list(line.transcription))
     alignment = levenshtein_alignment_substring(list(db_text), list(line.transcription))
     for key, start, end in zip(db_records, [0] + boundaries[:-1], boundaries):
         if is_candidate(alignment[start:end]):
@@ -175,7 +179,7 @@ def evaluate(candidate_keys, db_records, line):
 
 # To find problematic files, a TimeoutError is raised after 60 seconds
 # https://stackoverflow.com/questions/2281850/timeout-function-if-it-takes-too-long-to-finish
-# @timeout(60)
+@timeout(60)
 def filter_and_sort_lines(db_record, lines):
     indices = list(range(len(lines)))
 
@@ -195,14 +199,6 @@ def filter_and_sort_lines(db_record, lines):
     lines = [lines[index] for index in best_combination]
 
     return lines
-
-
-# def title_matched(mapping):
-#     for key in mapping:
-#         if helper.title_pattern.matches(key, "") and len(mapping[key]) > 0:
-#             return True
-
-#     return False
 
 
 def find_substring(text, line):
@@ -381,7 +377,11 @@ def process_file(db_path, transcription_path, output_path, threshold, max_candid
 
 def process_mapping_item(data, transcription, db_record, output, threshold, max_candidates):
     ocr, id = data
-    ocr_filename = os.path.join(transcription, f"{ocr}.gif.xml.txt")
+    
+    # To create alignments for 200 hand annotated card
+    ocr_filename = os.path.join(transcription, f"{ocr.rpartition('/')[2]}.gif.xml.txt")
+    
+    # ocr_filename = os.path.join(transcription, f"{ocr}.gif.xml.txt")
     db_filename = os.path.join(db_record, f"{id}.txt")
     out_filename = os.path.join(output, f"{ocr}.gif.xml.txt")
 
