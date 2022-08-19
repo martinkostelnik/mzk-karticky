@@ -24,7 +24,7 @@ class Trainer:
 
         # Disable BERT training
         if not settings["bert"]:
-            for name, param in self.model.named_parameters():
+            for name, param in self.model.bert.named_parameters():
                 if "classifier" not in name:
                     param.requires_grad = False
 
@@ -36,7 +36,7 @@ class Trainer:
     def train(self, train_data_loader, val_data_loader):
         best_epoch = np.inf
         print_steps = 100
-        print("Starting training")
+        
         # Start training
         for epoch in range(self.epochs):
             if epoch > 0:
@@ -108,7 +108,7 @@ class Trainer:
                     val_steps += 1
 
             if epoch_loss_val / val_steps < best_epoch:
-                self.model.save_pretrained(self.output_folder)
+                # self.model.save_pretrained(self.output_folder)
                 best_epoch = epoch_loss_val / val_steps
 
             print(f"Epoch {epoch+1} | Loss: {epoch_loss_train / train_steps} | Acc: {epoch_acc_train / train_steps} | Val_Loss: {epoch_loss_val / val_steps} | Val_Acc: {epoch_acc_val / val_steps}")

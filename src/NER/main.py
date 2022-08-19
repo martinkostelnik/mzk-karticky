@@ -8,6 +8,7 @@ from datetime import datetime
 
 from trainer import Trainer
 from dataset import FullDataset, HandAnnotatedDataset
+from model import MZKBert
 
 
 def parse_arguments():
@@ -39,7 +40,8 @@ def parse_arguments():
 if __name__ == "__main__":
     args = parse_arguments()
 
-    model = BertForTokenClassification.from_pretrained(args.modelpath, num_labels=args.labels)
+    # model = BertForTokenClassification.from_pretrained(args.modelpath, num_labels=args.labels)
+    model = MZKBert(num_labels=args.labels)
     tokenizer = BertTokenizerFast.from_pretrained(args.modelpath)
 
     if args.train:

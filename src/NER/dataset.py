@@ -40,8 +40,7 @@ class FullDataset(torch.utils.data.Dataset):
 
         res = []
         with zipfile.ZipFile(alig_path, "r") as z:
-            #for name in tqdm(z.namelist()[:1000]):
-            for name in tqdm(z.namelist()):
+            for name in z.namelist():
                 if not name.endswith(".txt") or name.partition("/")[2] in test_dataset:
                     continue
 
