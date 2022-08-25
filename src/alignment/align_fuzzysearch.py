@@ -52,61 +52,32 @@ def save_alignment(lines: list, output_path: str) -> None:
 
 def correct_overlaps(lines: list) -> None:
     lines.sort(key=lambda x: x["from"])
-    news = []
 
-    for i in range(len(lines) - 1):
-        line = lines[i]
-        next_line = lines[i + 1]
+    # If next line is inside current line, we just delete it
+    lines[:] = [lines[i] for i in range(len(lines) - 1) if lines[i]["to"] > lines[i+1]["to"]]
 
-        # next_line is inside current line, we split current line into two
-        if line["to"] > next_line["to"]: 
-            new = {
-                "label": line["label"],
-                "text": line["text"][next_line["to"]:],
-                "from": next_line["to"],
-                "to": line["to"],
-            }
+    # for i in range(len(lines) - 1):
+    #     line = lines[i]
+    #     next_line = lines[i + 1]
 
-            line["text"] = line["text"][:next_line["from"]]
-            line["to"] = next_line["from"]
-
-            news.append(new)
-            continue
-
-        # next_line overlaps the current line
-        if line["to"] > next_line["from"]:
-            # We shorten the longer line and prolong the shorter one
-            if len(line["text"]) > len(next_line["text"]):
-                line["text"] = line["text"][:next_line["from"]]
-                line["to"] = next_line["from"]
-            else:
-                next_line["text"] = next_line["text"][line["to"]:]
-                next_line["from"] = line["to"]
-
-    lines.extend(news)
-    lines.sort(key=lambda x: x["from"])
+    #     if line["to"] > next_line["from"]:
+    #         # We shorten the longer line and keep the shorter one
+    #         if len(line["text"]) > len(next_line["text"]):
+    #             line["text"] = line["text"][:line["to"]-next_line["from"]]
+    #             line["to"] = next_line["from"]
+    #         else:
+    #             next_line["text"] = next_line["text"][line["to"]-next_line["from"]:]
+    #             next_line["from"] = line["to"]
 
     # Remove empty lines
-    del_indices = []
-    for i, line in enumerate(lines):
-        if line["text"] == "" or len(line["text"]) <= 0:
-            del_indices.append(i)
+    lines[:] = [line for line in lines if line["text"] != "" and len(line["text"]) > 0]
 
-    for index in del_indices:
-        del lines[index]
+    values = []
+    for line in lines:
+        values.extend([line["from"], line["to"]])
 
-    # DEBUG: Prints overlapping alignments
-    # values = []
-    # for line in lines:
-    #     values.extend([line["from"], line["to"]])
-
-    # if all(values[i] <= values[i + 1] for i in range(len(values) - 1)):
-    #     return
-    # else:
-    #     for line in lines:
-    #         print(line)
-
-    #     print("")
+    if not all(values[i] <= values[i + 1] for i in range(len(values) - 1)):
+        correct_overlaps(lines)
 
 
 def process_file(data, output_path: str, threshold: float, ocr_folder: str, db_folder: str) -> None:
@@ -115,7 +86,7 @@ def process_file(data, output_path: str, threshold: float, ocr_folder: str, db_f
     
     path = ocr_path
     # Uncomment this to align 200 hand annotated
-    # path = ocr_path.rpartition("/")[2]
+    path = ocr_path.rpartition("/")[2]
 
     with open(f"{os.path.join(ocr_folder, path)}.gif.xml.txt", "r") as f:
         ocr = f.read()
@@ -131,6 +102,7 @@ def process_file(data, output_path: str, threshold: float, ocr_folder: str, db_f
         if lowest:
             lines.append({"label": label, "text": lowest.matched, "from": lowest.start, "to": lowest.end})
 
+    # lines.sort(key=lambda x: x["from"])
     correct_overlaps(lines)
 
     save_alignment(lines, os.path.join(output_path, ocr_path))

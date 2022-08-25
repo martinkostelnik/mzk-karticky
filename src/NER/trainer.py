@@ -1,6 +1,7 @@
 import typing
 import numpy as np
 import torch
+import os
 
 from dataset import IDS2LABELS
 from sklearn.metrics import accuracy_score
@@ -20,7 +21,13 @@ class Trainer:
         self.max_norm = settings["max_grad_norm"]
         self.num_labels = settings["num_labels"]
         self.output_folder = settings["output_folder"]
+        self.load = settings["load"]
         self.debug = settings["debug"]
+
+        if self.load:
+            checkpoint = torch.load(os.path.join(self.output_folder, "mzkbert.tar"))
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            self.optim.load_state_dict(checkpoint["optim_state_dict"])
 
         # Disable BERT training
         if not settings["bert"]:
@@ -34,7 +41,6 @@ class Trainer:
                 print(f"Training on {self.device}", file=f)
 
     def train(self, train_data_loader, val_data_loader):
-        best_epoch = np.inf
         print_steps = 100
         
         # Start training
@@ -107,12 +113,14 @@ class Trainer:
 
                     val_steps += 1
 
-            if epoch_loss_val / val_steps < best_epoch:
-                # self.model.save_pretrained(self.output_folder)
-                best_epoch = epoch_loss_val / val_steps
-
             print(f"Epoch {epoch+1} | Loss: {epoch_loss_train / train_steps} | Acc: {epoch_acc_train / train_steps} | Val_Loss: {epoch_loss_val / val_steps} | Val_Acc: {epoch_acc_val / val_steps}")
             
+            torch.save({
+                        "epoch": self.epochs,
+                        "model_state_dict": self.model.state_dict(),
+                        "optim_state_dict": self.optim.state_dict(),
+            }, os.path.join(self.output_folder, "mzkbert.tar"))
+
             if self.debug:
                 self.print_epoch_example(example_logits, example_labels, example_ids, example_offset_mapping, epoch)
 

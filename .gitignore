@@ -17,3 +17,6 @@ threshold-errors
 .idea/
 mzk_karticky.egg-info/
 alignments-fuzzy/
+overtraining/
+problems/
+

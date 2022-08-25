@@ -63,11 +63,12 @@ if __name__ == "__main__":
             "max_grad_norm": args.grad,
             "num_labels": args.labels,
             "bert": args.bert,
-            "output_folder": f"model/{int(datetime.timestamp(datetime.now()))}",
+            "load": args.load,
+            "output_folder": args.modelpath if args.load else f"model/{int(datetime.timestamp(datetime.now()))}",
             "debug": args.debug,
         }
 
-        os.makedirs(trainer_settings["output_folder"])
+        os.makedirs(trainer_settings["output_folder"], exist_ok=True)
 
         trainer = Trainer(settings=trainer_settings, model=model, tokenizer=tokenizer)
 

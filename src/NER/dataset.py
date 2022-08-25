@@ -41,7 +41,7 @@ class FullDataset(torch.utils.data.Dataset):
         res = []
         with zipfile.ZipFile(alig_path, "r") as z:
             for name in z.namelist():
-                if not name.endswith(".txt") or name.partition("/")[2] in test_dataset:
+                if not name.endswith(".txt") or name.partition("/")[2] in test_dataset or "samples" in name:
                     continue
 
                 offset_format = []
