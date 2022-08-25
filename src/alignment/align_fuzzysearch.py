@@ -82,8 +82,14 @@ def correct_overlaps(lines: list) -> None:
 
 def process_file(data, output_path: str, threshold: float, ocr_folder: str, db_folder: str) -> None:
     ocr_path, db_path = data
+    output_file_path = os.path.join(output_path, ocr_path)
+
+    if os.path.isfile(f"{output_file_path}.gif.xml.txt"):
+        print(f"File already exists {output_file_path}")
+        return
+
     db_record = load_db_records(os.path.join(db_folder, db_path))
-    
+
     path = ocr_path
     # Uncomment this to align 200 hand annotated
     path = ocr_path.rpartition("/")[2]
@@ -96,22 +102,32 @@ def process_file(data, output_path: str, threshold: float, ocr_folder: str, db_f
     for label, record in db_record.items():
         max_dist = min(int(len(record) * threshold), 12)
         matches = find_near_matches(record, ocr, max_l_dist=max_dist)
-        
+
         lowest = min(matches, key=lambda x: x.dist, default=None)
-        
+
         if lowest:
             lines.append({"label": label, "text": lowest.matched, "from": lowest.start, "to": lowest.end})
 
+<<<<<<< HEAD
     # lines.sort(key=lambda x: x["from"])
     correct_overlaps(lines)
+=======
+    try:
+        correct_overlaps(lines)
+    except:
+        print(f"Error during correcting overlaps {output_file_path}")
+        return
+>>>>>>> b91d1281e525019cb5fe9cb37393cf872439d03c
 
-    save_alignment(lines, os.path.join(output_path, ocr_path))
+    save_alignment(lines, output_file_path)
+    print(f"Saved {output_file_path}")
 
 
 if __name__ == "__main__":
     args = parse_arguments()
 
     mapping = helper.create_mapping(args.mapping)
+    print(f"Mapping loaded ({len(mapping)})")
 
     processing_function = partial(process_file, ocr_folder=args.ocr,
                                                 output_path=args.output,
