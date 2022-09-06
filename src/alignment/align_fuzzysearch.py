@@ -50,34 +50,23 @@ def save_alignment(lines: list, output_path: str) -> None:
             print(f"{line['label']}\t{repr(line['text'])}\t{line['from']}\t{line['to']}", file=f)
 
 
-def correct_overlaps(lines: list) -> None:
+def correct_overlaps(lines: list) -> list:
     lines.sort(key=lambda x: x["from"])
 
-    # If next line is inside current line, we just delete it
-    lines[:] = [lines[i] for i in range(len(lines) - 1) if lines[i]["to"] > lines[i+1]["to"]]
+    for index1, line1 in enumerate(lines):
+        for index2, line2 in enumerate(lines):
+            if index1 != index2 and line1 is not None and line2 is not None:
+                if line1["from"] <= line2["from"] < line2["to"] <= line1["to"]:
+                    lines[index2] = None
 
-    # for i in range(len(lines) - 1):
-    #     line = lines[i]
-    #     next_line = lines[i + 1]
+                elif line1["from"] < line2["from"] < line1["to"] < line2["to"]:
+                    middle = (line2["from"] + line1["to"]) // 2
+                    line1["to"] = middle
+                    line2["from"] = middle + 1
 
-    #     if line["to"] > next_line["from"]:
-    #         # We shorten the longer line and keep the shorter one
-    #         if len(line["text"]) > len(next_line["text"]):
-    #             line["text"] = line["text"][:line["to"]-next_line["from"]]
-    #             line["to"] = next_line["from"]
-    #         else:
-    #             next_line["text"] = next_line["text"][line["to"]-next_line["from"]:]
-    #             next_line["from"] = line["to"]
+    lines = [line for line in lines if line is not None]
 
-    # Remove empty lines
-    lines[:] = [line for line in lines if line["text"] != "" and len(line["text"]) > 0]
-
-    values = []
-    for line in lines:
-        values.extend([line["from"], line["to"]])
-
-    if not all(values[i] <= values[i + 1] for i in range(len(values) - 1)):
-        correct_overlaps(lines)
+    return lines
 
 
 def process_file(data, output_path: str, threshold: float, ocr_folder: str, db_folder: str) -> None:
@@ -92,7 +81,7 @@ def process_file(data, output_path: str, threshold: float, ocr_folder: str, db_f
 
     path = ocr_path
     # Uncomment this to align 200 hand annotated
-    path = ocr_path.rpartition("/")[2]
+    # path = ocr_path.rpartition("/")[2]
 
     with open(f"{os.path.join(ocr_folder, path)}.gif.xml.txt", "r") as f:
         ocr = f.read()
@@ -108,16 +97,14 @@ def process_file(data, output_path: str, threshold: float, ocr_folder: str, db_f
         if lowest:
             lines.append({"label": label, "text": lowest.matched, "from": lowest.start, "to": lowest.end})
 
-<<<<<<< HEAD
-    # lines.sort(key=lambda x: x["from"])
-    correct_overlaps(lines)
-=======
     try:
-        correct_overlaps(lines)
+        lines = correct_overlaps(lines)
     except:
         print(f"Error during correcting overlaps {output_file_path}")
         return
->>>>>>> b91d1281e525019cb5fe9cb37393cf872439d03c
+
+    for line in lines:
+        line["text"] = ocr[line["from"]:line["to"]]
 
     save_alignment(lines, output_file_path)
     print(f"Saved {output_file_path}")
@@ -134,5 +121,5 @@ if __name__ == "__main__":
                                                 threshold=args.threshold,
                                                 db_folder=args.db)
 
-    pool = Pool(processes=4)
+    pool = Pool(processes=5)
     pool.map(processing_function, mapping.items())
