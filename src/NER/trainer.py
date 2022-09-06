@@ -10,24 +10,22 @@ from seqeval.metrics import classification_report
 
 class Trainer:
     def __init__(self, settings: dict, model, tokenizer):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        
         self.tokenizer = tokenizer
 
         # Set training settings
         self.epochs = settings["epochs"]
-        self.model = model.to(self.device)
+        self.model = model
         self.optim = torch.optim.Adam(self.model.parameters(), lr=settings["learning_rate"])
         self.max_norm = settings["max_grad_norm"]
         self.num_labels = settings["num_labels"]
         self.output_folder = settings["output_folder"]
-        self.load = settings["load"]
-        self.debug = settings["debug"]
+        # self.load = settings["load"]
+        # self.debug = settings["debug"]
 
-        if self.load:
-            checkpoint = torch.load(os.path.join(self.output_folder, "mzkbert.tar"))
-            self.model.load_state_dict(checkpoint["model_state_dict"])
-            self.optim.load_state_dict(checkpoint["optim_state_dict"])
+        # if self.load:
+        #     checkpoint = torch.load(os.path.join(self.output_folder, "mzkbert.tar"))
+        #     self.model.load_state_dict(checkpoint["model_state_dict"])
+        #     self.optim.load_state_dict(checkpoint["optim_state_dict"])
 
         # Disable BERT training
         if not settings["bert"]:
@@ -35,19 +33,42 @@ class Trainer:
                 if "classifier" not in name:
                     param.requires_grad = False
 
-        if self.debug:
-            with open("debug.txt", "a") as f:
-                print("\n----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
-                print(f"Training on {self.device}", file=f)
+        # if self.debug:
+        #     with open("debug.txt", "a") as f:
+        #         print("\n----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
+        #         print(f"Training on {self.device}", file=f)
 
-    def train(self, train_data_loader, val_data_loader):
-        print_steps = 100
-        
+    def train_step(self, batch):
+        loss, logits = self.forward(batch)
+
+        torch.nn.utils.clip_grad_norm_(parameters=self.model.parameters(), max_norm=self.max_norm)
+
+        self.optim.zero_grad()
+        loss.backward()
+        self.optim.step()
+
+        return loss.item(), logits.detach()
+
+    def test_step(self, batch):
+        with torch.no_grad():
+            loss, logits = self.forward(batch)
+
+        return loss.item(), logits.detach()
+
+    def forward(self, batch):
+        device = self.model.get_device()
+
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        labels = batch["labels"].to(device)
+
+        loss, logits = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+
+        return loss, logits[0]
+
+    def train(self, train_data_loader, val_data_loader, view_step=1000):
         # Start training
         for epoch in range(self.epochs):
-            if epoch > 0:
-                print_steps = 1000
-
             epoch_acc_train = 0
             epoch_loss_train = 0
             epoch_acc_val = 0
@@ -62,67 +83,52 @@ class Trainer:
             # Training loop
             self.model.train()
             for i, batch in enumerate(train_data_loader):
-                input_ids = batch["input_ids"].to(self.device)
-                attention_mask = batch["attention_mask"].to(self.device)
-                labels = batch["labels"].to(self.device)
+                loss, logits = self.train_step(batch)
 
-                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-                loss, logits = outputs[0], outputs[1]
+                epoch_loss_train += loss
+                steps_loss += loss
 
-                epoch_loss_train += loss.item()
-                steps_loss += loss.item()
-
-                acc = self.calculate_acc(labels, logits)[0]
+                acc = self.calculate_acc(batch["labels"], logits)[0]
                 epoch_acc_train += acc
                 steps_acc += acc
-                
-                torch.nn.utils.clip_grad_norm_(parameters=self.model.parameters(), max_norm=self.max_norm)
-
-                self.optim.zero_grad()
-                loss.backward()
-                self.optim.step()
 
                 train_steps += 1
 
-                if train_steps % print_steps == 0:
-                    print(f"Epoch {epoch+1} | Steps {train_steps} | Loss: {steps_loss / print_steps} | Acc: {steps_acc / print_steps}")
+                if train_steps % view_step == 0:
+                    print(f"Epoch {epoch+1} | Steps {train_steps} | Loss: {steps_loss / view_step} | Acc: {steps_acc / view_step}")
             
                     steps_loss = 0
                     steps_acc = 0
 
-                # Save example input/outputs from first batch
-                if i == 0:
-                    example_ids = input_ids
-                    example_logits = logits
-                    example_labels = labels
-                    example_offset_mapping = batch["offset_mapping"]
+                # # Save example input/outputs from first batch
+                # if i == 0:
+                #     example_ids = batch["input_ids"]
+                #     example_logits = logits
+                #     example_labels = batch["labels"]
+                #     example_offset_mapping = batch["offset_mapping"]
 
             # Validation loop
             self.model.eval()
-            with torch.no_grad():
-                for batch in val_data_loader:
-                    input_ids = batch["input_ids"].to(self.device)
-                    attention_mask = batch["attention_mask"].to(self.device)
-                    labels = batch["labels"].to(self.device)
+            for batch in val_data_loader:
+                loss, logits = self.test_step(batch)
 
-                    outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-                    loss, logits = outputs[0], outputs[1]
+                epoch_loss_val += loss
+                epoch_acc_val += self.calculate_acc(batch["labels"], logits)[0]
 
-                    epoch_loss_val += loss.item()
-                    epoch_acc_val += self.calculate_acc(labels, logits)[0]
-
-                    val_steps += 1
+                val_steps += 1
 
             print(f"Epoch {epoch+1} | Loss: {epoch_loss_train / train_steps} | Acc: {epoch_acc_train / train_steps} | Val_Loss: {epoch_loss_val / val_steps} | Val_Acc: {epoch_acc_val / val_steps}")
-            
-            torch.save({
-                        "epoch": self.epochs,
-                        "model_state_dict": self.model.state_dict(),
-                        "optim_state_dict": self.optim.state_dict(),
-            }, os.path.join(self.output_folder, "mzkbert.tar"))
 
-            if self.debug:
-                self.print_epoch_example(example_logits, example_labels, example_ids, example_offset_mapping, epoch)
+            self.model.save(os.path.join(self.output_folder, f"checkpoint_{epoch+1:03d}.pth"))
+
+            # torch.save({
+            #             "epoch": self.epochs,
+            #             "model_state_dict": self.model.state_dict(),
+            #             "optim_state_dict": self.optim.state_dict(),
+            # }, os.path.join(self.output_folder, "mzkbert.tar"))
+            #
+            # if self.debug:
+            #     self.print_epoch_example(example_logits, example_labels, example_ids, example_offset_mapping, epoch)
 
     def evaluate(self, test_data_loader):
         self.model.eval()
@@ -136,24 +142,18 @@ class Trainer:
         report_preds = []
 
         # Test loop
-        with torch.no_grad():
-            for batch in test_data_loader:
-                input_ids = batch["input_ids"].to(self.device)
-                attention_mask = batch["attention_mask"].to(self.device)
-                labels = batch["labels"].to(self.device)
+        for batch in test_data_loader:
+            loss, logits = self.test_step(batch)
 
-                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-                loss, logits = outputs[0], outputs[1]
+            test_loss += loss
+            acc, l, p = self.calculate_acc(batch["labels"], logits)
 
-                test_loss += loss.item()
-                acc, l, p = self.calculate_acc(labels, logits)
+            report_labels.append(l)
+            report_preds.append(p)
 
-                report_labels.append(l)
-                report_preds.append(p)
+            test_acc += acc
 
-                test_acc += acc
-                
-                steps += 1
+            steps += 1
 
         l = [[IDS2LABELS[id.item()] for id in l_] for l_ in report_labels]
         p = [[IDS2LABELS[id.item()] for id in p_] for p_ in report_preds]
@@ -163,11 +163,11 @@ class Trainer:
         print(classification_report(l, p, zero_division=0))
 
     def calculate_acc(self, labels, logits):
-        flattened_targets = labels.view(-1) # shape (batch_size * seq_len,)
-        active_logits = logits.view(-1, self.num_labels) # shape (batch_size * seq_len, num_labels)
-        flattened_predictions = torch.argmax(active_logits, axis=1) # shape (batch_size * seq_len,)
-        active_accuracy = labels.view(-1) != -100 # shape (batch_size, seq_len)
-        
+        flattened_targets = labels.view(-1)  # shape (batch_size * seq_len,)
+        active_logits = logits.view(-1, self.num_labels)  # shape (batch_size * seq_len, num_labels)
+        flattened_predictions = torch.argmax(active_logits, axis=1).cpu()  # shape (batch_size * seq_len,)
+        active_accuracy = labels.view(-1) != -100  # shape (batch_size, seq_len)
+
         labels_acc = torch.masked_select(flattened_targets, active_accuracy)
         predictions_acc = torch.masked_select(flattened_predictions, active_accuracy)
 
