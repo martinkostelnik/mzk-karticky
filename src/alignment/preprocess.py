@@ -10,25 +10,11 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--mapping", help="Path to file with mapping.")
-    parser.add_argument("--db-files", help="Path to DB files (mzk01.bib and mzk03.bib).", nargs="+")
+    parser.add_argument("--db-file", help="Path to DB file (mzk.full-id.txt).")
     parser.add_argument("--output-dir", help="Path to output directory.")
 
     args = parser.parse_args()
     return args
-
-
-def load_db_files(files, db_ids):
-    data = {}
-    for file in files:
-        file_data = load_db_file(file, db_ids)
-
-        for key in file_data:
-            if key in data:
-                data[key].append(file_data[key])
-            else:
-                data[key] = file_data[key]
-
-    return data
 
 
 def load_db_file(path, db_ids):
@@ -63,7 +49,7 @@ def clean_db_records(data:dict) -> dict:
     for key in data:
         for line in data[key]:
             # TODO: Je dobry napad brat pouze 10:13? Ty pripadne dalsi dve hodnoty take muzou neco znamenat ...
-            clean_data[key].append(f"{line[10:13]} {line[18:]}")
+            clean_data[key].append(f"{line[16:19]} {line[24:]}")
 
     return clean_data
 
@@ -75,8 +61,8 @@ def main() -> int:
     print(f"Mapping loaded ({len(mapping)}).")
 
     db_ids = set(mapping.values())
-    data = load_db_files(args.db_files, db_ids)
-    print(f"DB files loaded ({len(data)}).")
+    data = load_db_file(args.db_file, db_ids)
+    print(f"DB file loaded ({len(data)}).")
 
     data = clean_db_records(data)
     print(f"Data cleaned.")

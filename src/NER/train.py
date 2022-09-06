@@ -26,7 +26,9 @@ def parse_arguments():
     parser.add_argument("--val-ratio", type=float, default=0.10, help="Ratio of validating data.")
 
     parser.add_argument("--load", action="store_true", help="Load model and tokenizer")
-    parser.add_argument("--modelpath", default="bert-base-multilingual-uncased", help="Path to model and tokenizer")
+    parser.add_argument("--model-path", default="bert-base-multilingual-uncased", help="Path to a model checkpoint.")
+    parser.add_argument("--tokenizer-path", default="bert-base-multilingual-uncased", help="Path to a tokenizer checkpoint.")
+    parser.add_argument("--save-path", help="Path to a directory where checkpoints are stored.")
 
     parser.add_argument("--ocr", help="Path to folder containing ocr.")
     parser.add_argument("--alig", help="Path to folder containing alignments.")
@@ -41,8 +43,8 @@ if __name__ == "__main__":
     args = parse_arguments()
 
     # model = BertForTokenClassification.from_pretrained(args.modelpath, num_labels=args.labels)
-    model = MZKBert(num_labels=args.labels)
-    tokenizer = BertTokenizerFast.from_pretrained(args.modelpath)
+    model = MZKBert(num_labels=args.labels, pretrained_bert_path=args.model_path)
+    tokenizer = BertTokenizerFast.from_pretrained(args.tokenizer_path)
 
     if args.train:
         data = FullDataset(args.ocr, args.alig, tokenizer, args.debug)
@@ -64,7 +66,7 @@ if __name__ == "__main__":
             "num_labels": args.labels,
             "bert": args.bert,
             "load": args.load,
-            "output_folder": args.modelpath if args.load else f"model/{int(datetime.timestamp(datetime.now()))}",
+            "output_folder": args.save_path,
             "debug": args.debug,
         }
 
