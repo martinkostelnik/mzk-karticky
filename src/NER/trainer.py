@@ -165,7 +165,7 @@ class Trainer:
     def calculate_acc(self, labels, logits):
         flattened_targets = labels.view(-1)  # shape (batch_size * seq_len,)
         active_logits = logits.view(-1, self.num_labels)  # shape (batch_size * seq_len, num_labels)
-        flattened_predictions = torch.argmax(active_logits, axis=1).cpu()  # shape (batch_size * seq_len,)
+        flattened_predictions = torch.argmax(active_logits, axis=1).to(flattened_targets.device)  # shape (batch_size * seq_len,)
         active_accuracy = labels.view(-1) != -100  # shape (batch_size, seq_len)
 
         labels_acc = torch.masked_select(flattened_targets, active_accuracy)
