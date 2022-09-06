@@ -10,7 +10,7 @@ from tqdm import tqdm
 import pandas as pd
 
 
-LABELS = ["Author", "Title", "Original title", "Publisher", "Pages", "Series", "Edition", "References", "ID",
+LABELS = ["Author", "Title", "Original_title", "Publisher", "Pages", "Series", "Edition", "References", "ID",
           "ISBN", "ISSN", "Topic", "Subtitle", "Date", "Institute", "Volume"]
 
 FORMAT = ["B", "I"]
@@ -21,52 +21,71 @@ LABELS2IDS["O"] = 0
 IDS2LABELS = {v: k for k, v in LABELS2IDS.items()}
 
 
-class FullDataset(torch.utils.data.Dataset):
-    def __init__(self, ocr_path: str, alig_path: str, tokenizer, debug: bool, max_len: int=256):
-        self.data = self.load_data(ocr_path, alig_path)
-        self.len = len(self.data)
+class Annotation:
+    def __init__(self, file_id, text, alignments):
+        self.file_id = file_id
+        self.text = text
+        self.alignments = alignments
+
+    def __str__(self):
+        output = f"{self.file_id}\n"
+        output += f"{self.text}\n"
+        output += '\n'.join([f"{alignment.label}: {alignment.start}-{alignment.end} [{self.text[alignment.start:alignment.end]}]" for alignment in self.alignments])
+        return output
+
+
+class Alignment:
+    def __init__(self, label, start, end):
+        self.label = label
+        self.start = start
+        self.end = end
+
+    def __str__(self):
+        return f"{self.label}: {self.start}-{self.end}"
+
+
+class AlignmentDataset(torch.utils.data.Dataset):
+    def __init__(self, data_path: str, ocr_path: str, tokenizer, max_len: int=256):
+        self.data: typing.List[Annotation] = []
         self.tokenizer = tokenizer
         self.max_len = max_len
 
-        if debug:
-            self.print_dataset_debug()
+        self.data_path = data_path
+        self.ocr_path = ocr_path
 
-    def load_data(self, ocr_path: str, alig_path: str) -> list:
-        # Delete items present in test dataset
-        test_dataset = []
-        with open("mapping.txt", "r") as f:
-            for line in f:
-                test_dataset.append(line.split()[0].replace("-", "/"))
+        self.load_data()
 
-        res = []
-        with zipfile.ZipFile(alig_path, "r") as z:
-            for name in z.namelist():
-                if not name.endswith(".txt") or name.partition("/")[2] in test_dataset or "samples" in name:
-                    continue
+    def load_data(self) -> None:
+        with open(self.data_path) as file:
+            for line in file:
+                line = line.strip()
+                if len(line) > 0:
+                    self.data.append(self.parse_annotation(line))
 
-                offset_format = []
+    def load_ocr_file(self, path):
+        with open(os.path.join(self.ocr_path, path), 'r') as f:
+            text = f.read()
 
-                with z.open(name) as f:
-                    for line in f:
-                        s = line.decode("utf-8").split("\t")
-                        # (from, to, label)
-                        offset_format.append((int(s[2]), int(s[3]), s[0]))
+        return text
 
-                with open(os.path.join(ocr_path, name.partition("/")[2]), 'r') as f:
-                    text = f.read()
+    def parse_annotation(self, line):
+        file_path, *alignments = line.split("\t")
+        return Annotation(file_path, self.load_ocr_file(file_path), self.parse_alignments(alignments))
 
-                offset_format.sort(key=lambda x: x[0])
-                
-                if len(offset_format) > 0 and offset_format[-1][1] < len(text):
-                    res.append((text, offset_format))
+    def parse_alignments(self, alignments):
+        result = []
 
-        return res
+        for alignment in alignments:
+            label, start, end,  = alignment.split()
+            result.append(Alignment(label, int(start), int(end)))
+
+        result.sort(key=lambda a: a.start)
+        return result
 
     # https://colab.research.google.com/github/NielsRogge/Transformers-Tutorials/blob/master/BERT/Custom_Named_Entity_Recognition_with_BERT_only_first_wordpiece.ipynb#scrollTo=Eh3ckSO0YMZW
     def __getitem__(self, index):
-        text, offset_format = self.data[index]
-
-        tokens, iob = self.create_iob(text, offset_format)
+        annotation = self.data[index]
+        tokens, iob = self.create_iob(annotation.text, annotation.alignments)
 
         encoding = self.tokenizer(tokens,
                                   padding="max_length",
@@ -93,26 +112,28 @@ class FullDataset(torch.utils.data.Dataset):
 
         item = {key: torch.as_tensor(val) for key, val in encoding.items()}
         item["labels"] = torch.as_tensor(encoded_labels)
+        item["ids"] = annotation.file_id
 
         return item
 
     def __len__(self):
-        return self.len
+        return len(self.data)
 
-    def create_iob(self, text: str, offset_format: list):
-        beginning = text[0:offset_format[0][0]].split()
+    def create_iob(self, text: str, alignments: typing.List[Alignment]):
+        beginning = text[:alignments[0].start].split()
         tokens = [[word, "O"] for word in beginning]
 
-        for i, item in enumerate(offset_format):
-            substr = text[item[0]:item[1]].split()
+        for i, alignment in enumerate(alignments):
+            substr = text[alignment.start:alignment.end].split()
 
-            tokens.extend([[word, item[2]] for word in substr])
+            tokens.extend([[word, alignment.label] for word in substr])
 
             try:
-                next_ = text[item[1]:offset_format[i+1][0]].split()
+                next_alignment = alignments[i+1]
+                next_ = text[alignment.end:next_alignment.start].split()
                 tokens.extend([[word, "O"] for word in next_])
             except IndexError:
-                end = text[item[1]:].split()
+                end = text[alignment.end:].split()
                 tokens.extend([[word, "O"] for word in end])
 
         current = ""
@@ -129,83 +150,116 @@ class FullDataset(torch.utils.data.Dataset):
 
         return tokens, iob
 
-    def print_dataset_debug(self):
-        idx = np.random.randint(low=0, high=self.len - 1)
-        example_raw = self.data[idx]
-        example = self.__getitem__(idx)
+    # def print_dataset_debug(self):
+    #     idx = np.random.randint(low=0, high=len(self) - 1)
+    #     example_raw = self.data[idx]
+    #     example = self.__getitem__(idx)
+    #
+    #     with open("debug.txt", "w") as f:
+    #         print("----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
+    #         print("Example raw data point in Pytorch Dataset:\n", file=f)
+    #         print(example_raw[0], file=f)
+    #
+    #         for item in example_raw[1]:
+    #             print(f"{item} {repr(example_raw[0][item[0]:item[1]])}", file=f)
+    #
+    #         print("\n----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
+    #
+    #         print("Example data point from tokenizer:\n", file=f)
+    #         print("_______________________________tokenizer________________________________|___________truth___________", file=f)
+    #         print("input_ids       token_type_ids  attention_mask  offset_mapping  labels  |  labels            tokens", file=f)
+    #
+    #         tokens = self.tokenizer.convert_ids_to_tokens(example["input_ids"].squeeze().tolist())
+    #
+    #         labels = []
+    #         for label in example["labels"]:
+    #             try:
+    #                 labels.append(IDS2LABELS[label.item()])
+    #             except KeyError:
+    #                 labels.append("-")
+    #
+    #         for input_id, type_id, attention_mask, offset, label, text_label, token in zip(example["input_ids"], example["token_type_ids"], example["attention_mask"], example["offset_mapping"], example["labels"], labels, tokens):
+    #             print(f"{input_id.item():<14}  {type_id.item():<14}  {attention_mask.item():<14}  {str(offset.tolist()):<14}  {label.item():<8}|  {text_label:<16}  {token}", file=f)
+    #
+    #         print("\n----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
+    #
+    #         sums = [torch.sum(dato["attention_mask"]).item() for dato in self]
+    #         pd.DataFrame(sums).to_csv("sums.txt", index=False, header=False)
+    #         max_len = max(sums)
+    #         print(f"Longest token sequence in data is {max_len} tokens long.", file=f)
+    #         print(f"Max token sequence length is currently set to {self.max_len}.", file=f)
+    #
+    #         if max_len == self.max_len:
+    #             for handle in [f, sys.stderr]:
+    #                 print(f"WARNING: Longest sequence ({max_len}) should not have the same length as maximum length.", file=handle)
+    #                 print(f"This probably means that data are getting truncated.", file=handle)
+    #                 print(f"You should increase maximum length and re-check the longest sequence found.", file=handle)
 
-        with open("debug.txt", "w") as f:
-            print("----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
-            print("Example raw data point in Pytorch Dataset:\n", file=f)
-            print(example_raw[0], file=f)
 
-            for item in example_raw[1]:
-                print(f"{item} {repr(example_raw[0][item[0]:item[1]])}", file=f)
-                
-            print("\n----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
+# class HandAnnotatedDataset(AlignmentDataset):
+#     def __init__(self, ocr_path: str, alig_path: str, tokenizer, max_len: int=256):
+#         self.data = self.load_data(ocr_path, alig_path)
+#         self.tokenizer = tokenizer
+#         self.max_len=max_len
+#
+#     def load_data(self, ocr_path: str, alig_path: str) -> list:
+#         res = []
+#
+#         with open(alig_path, "r") as json_f:
+#             json_data = json.load(json_f)
+#
+#         for annotated_file in json_data:
+#             if "label" in annotated_file:
+#                 offset_format = []
+#
+#                 filename = annotated_file["text"].rpartition("/")[2]
+#
+#                 for annotation in annotated_file["label"]:
+#                     label = annotation["labels"][0]
+#                     start = annotation["start"]
+#                     end = annotation["end"]
+#
+#                     offset_format.append((start, end, label))
+#
+#                 with open(os.path.join(ocr_path, filename), 'r') as f:
+#                     text = f.read()
+#
+#                 offset_format.sort(key=lambda x: x[0])
+#
+#                 res.append((text, offset_format))
+#
+#         return res
+#
+#     def __len__(self):
+#         return len(self.data)
+#
 
-            print("Example data point from tokenizer:\n", file=f)
-            print("_______________________________tokenizer________________________________|___________truth___________", file=f)
-            print("input_ids       token_type_ids  attention_mask  offset_mapping  labels  |  labels            tokens", file=f)
 
-            tokens = self.tokenizer.convert_ids_to_tokens(example["input_ids"].squeeze().tolist())
+def parse_arguments():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-path", help="Path to the alignments file.")
+    parser.add_argument("--ocr-dir", help="Path to the dir with OCR files.")
+    parser.add_argument("--tokenizer-path", help="Path to the tokenizer.")
 
-            labels = []
-            for label in example["labels"]:
-                try:
-                    labels.append(IDS2LABELS[label.item()])
-                except KeyError:
-                    labels.append("-")
-
-            for input_id, type_id, attention_mask, offset, label, text_label, token in zip(example["input_ids"], example["token_type_ids"], example["attention_mask"], example["offset_mapping"], example["labels"], labels, tokens):
-                print(f"{input_id.item():<14}  {type_id.item():<14}  {attention_mask.item():<14}  {str(offset.tolist()):<14}  {label.item():<8}|  {text_label:<16}  {token}", file=f)
-
-            print("\n----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
-
-            sums = [torch.sum(dato["attention_mask"]).item() for dato in self]
-            pd.DataFrame(sums).to_csv("sums.txt", index=False, header=False)
-            max_len = max(sums)
-            print(f"Longest token sequence in data is {max_len} tokens long.", file=f)
-            print(f"Max token sequence length is currently set to {self.max_len}.", file=f)
-           
-            if max_len == self.max_len:
-                for handle in [f, sys.stderr]:
-                    print(f"WARNING: Longest sequence ({max_len}) should not have the same length as maximum length.", file=handle)
-                    print(f"This probably means that data are getting truncated.", file=handle)
-                    print(f"You should increase maximum length and re-check the longest sequence found.", file=handle)
+    args = parser.parse_args()
+    return args
 
 
-class HandAnnotatedDataset(FullDataset):
-    def __init__(self, ocr_path: str, alig_path: str, tokenizer, max_len: int=256):
-        self.data = self.load_data(ocr_path, alig_path)
-        self.len = len(self.data)
-        self.tokenizer = tokenizer
-        self.max_len=max_len
+def main():
+    from transformers import BertTokenizerFast
 
-    def load_data(self, ocr_path: str, alig_path: str) -> list:
-        res = []
+    args = parse_arguments()
 
-        with open(alig_path, "r") as json_f:
-            json_data = json.load(json_f)
+    tokenizer = BertTokenizerFast.from_pretrained(args.tokenizer_path)
+    dataset = AlignmentDataset(args.data_path, args.ocr_dir, tokenizer=tokenizer)
 
-        for annotated_file in json_data:
-            if "label" in annotated_file:
-                offset_format = []
+    print(f"Dataset size: {len(dataset)}")
+    print(dataset[0])
 
-                filename = annotated_file["text"].rpartition("/")[2]
+    return 0
 
-                for annotation in annotated_file["label"]:
-                    label = annotation["labels"][0]
-                    start = annotation["start"]
-                    end = annotation["end"]
 
-                    offset_format.append((start, end, label))
+if __name__ == "__main__":
+    exit(main())
 
-                with open(os.path.join(ocr_path, filename), 'r') as f:
-                    text = f.read()
-
-                offset_format.sort(key=lambda x: x[0])
-            
-                res.append((text, offset_format))
-
-        return res
