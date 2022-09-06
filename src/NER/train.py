@@ -31,7 +31,6 @@ def parse_arguments():
     parser.add_argument("--save-path", help="Path to a directory where checkpoints are stored.")
 
     parser.add_argument("--ocr-path", help="Path to folder containing ocr.")
-    parser.add_argument("--alignment-path", help="Path to folder containing alignments.")
     parser.add_argument("--train-path", help="Path to a text file with training data.")
     parser.add_argument("--val-path", help="Path to a text file with validation data.")
     parser.add_argument("--test-path", help="Path to a text file with test data.")
@@ -42,7 +41,7 @@ def parse_arguments():
     return args
 
 
-def load_dataset(data_path, alignment_path, ocr_path, batch_size, tokenizer, num_workers=0):
+def load_dataset(data_path, ocr_path, batch_size, tokenizer, num_workers=0):
     dataset = AlignmentDataset(data_path=data_path, ocr_path=ocr_path, tokenizer=tokenizer)
     data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     return data_loader
@@ -60,7 +59,7 @@ if __name__ == "__main__":
 
     tokenizer = BertTokenizerFast.from_pretrained(args.tokenizer_path)
 
-    load_data = partial(load_dataset, alignment_path=args.alignment_path, ocr_path=args.ocr_path, batch_size=args.batch_size, tokenizer=tokenizer)
+    load_data = partial(load_dataset, ocr_path=args.ocr_path, batch_size=args.batch_size, tokenizer=tokenizer)
     train_dataset = load_data(args.train_path)
     val_dataset = load_data(args.val_path)
     # test_dataset = load_data(args.test_path)
