@@ -45,6 +45,9 @@ def load_db_records(path: str) -> dict:
 def save_alignment(lines: list, output_path: str) -> None:
     os.makedirs(output_path.rpartition("/")[0], exist_ok=True)
 
+    # Uncomment this to align 200 hand annotated
+    # output_path = output_path.partition("/")[0] + "/" + output_path.rpartition("/")[2]
+
     with open(f"{output_path}.gif.xml.txt", "w") as f:
         for line in lines:
             print(f"{line['label']}\t{repr(line['text'])}\t{line['from']}\t{line['to']}", file=f)

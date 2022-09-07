@@ -20,6 +20,10 @@ def load_annotations(path):
         return json.load(f)
 
 
+def fix_original_title(lines):
+    return [line.replace("Original title", "Original_title") for line in lines]
+
+
 def save_output(lines, output):
     with open(output, "w") as f:
         for line in lines:
@@ -48,5 +52,7 @@ if __name__ == "__main__":
             entry += f'\t{annotated_item["labels"][0]} {annotated_item["start"]} {annotated_item["end"]}'
 
         entries.append(entry)
+
+    entries = fix_original_title(entries)
 
     save_output(entries, args.output)
