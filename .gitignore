@@ -1,7 +1,9 @@
 alignments/
 alignments-old/
 outputs/
-data/
+data/mapping-all.txt
+data/mzk01.bib
+data/mzk03.bib
 db*/
 images/
 page-txts/

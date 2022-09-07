@@ -107,6 +107,7 @@ def process_file(data, output_path: str, threshold: float, ocr_folder: str, db_f
         line["text"] = ocr[line["from"]:line["to"]]
 
     save_alignment(lines, output_file_path)
+
     print(f"Saved {output_file_path}")
 
 

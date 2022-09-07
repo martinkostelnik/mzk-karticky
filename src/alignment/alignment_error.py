@@ -3,10 +3,10 @@
 """
     We load data as 
     {
-        filename: (dict_anno, dict_alig),
-        filename: (dict_anno, dict_alig),
-        filename: (dict_anno, dict_alig),
-        filename: (dict_anno, dict_alig),
+        filename: ({anno_label: [(from, to), ...]}, {alig_label: [(from, to), ...]}),
+        filename: ({anno_label: [(from, to), ...]}, {alig_label: [(from, to), ...]}),
+        filename: ({anno_label: [(from, to), ...]}, {alig_label: [(from, to), ...]}),
+        filename: ({anno_label: [(from, to), ...]}, {alig_label: [(from, to), ...]}),
         .
         .
         .
@@ -28,6 +28,16 @@
 
     MODE 2:
         Calculate error on per character basis.
+
+        Two masked strings are created, one for annotation and one for alignment. For example:
+        Let's consider a mask {Nothing: 0, Author: 1, Title: 2}. Each character from the OCR text is then
+        replaced using this mask.
+        Then we could get masks that look like this:
+        Annotation: 0000111111111111100000000000000000222222222222222222200000000000000
+        Alignment:  0000111111111111111100000000000022222222222222222222222200000000000
+
+        We now iterate over all the characters and compare them. If two characters aren't the same, an alignment error
+        has occured (which means that union gets incremented, but the intersection does not).
 """
 
 
@@ -216,14 +226,15 @@ def load_data(annotation_path: str, alignment_path: str) -> list:
 
         filename = annotated_file_json["text"].rpartition("/")[2]
 
-        with open(os.path.join(alignment_path, filename), "r") as f:
-            for line in f:
-                s = line.split("\t")
-                label = s[0]
-                from_ = int(s[2])
-                to = int(s[3])
+        for root, _, walk_filename in os.walk(alignment_path):
+            with open(os.path.join(alignment_path, filename), "r") as f:
+                for line in f:
+                    s = line.split("\t")
+                    label = s[0]
+                    from_ = int(s[2])
+                    to = int(s[3])
 
-                alignment[label].append((from_, to))
+                    alignment[label].append((from_, to))
 
         res[filename] = (annotation, alignment)
 
@@ -283,6 +294,7 @@ def run_masked_mode(data: dict, result_manager: ResultManager, ocr_path: str):
                 if alig_char != anno_char:
                     label = INV_MASK[anno_char] if anno_char != EMPTY_MASK else INV_MASK[alig_char]
                     result_manager.increment(0, 1, filename, label)
+
 
 if __name__ == "__main__":
     args = parse_arguments()
