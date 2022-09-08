@@ -60,13 +60,11 @@ if __name__ == "__main__":
     tokenizer = BertTokenizerFast.from_pretrained(args.tokenizer_path)
 
     load_data = partial(load_dataset, ocr_path=args.ocr_path, batch_size=args.batch_size, tokenizer=tokenizer)
+
     train_dataset = load_data(args.train_path)
     val_dataset = load_data(args.val_path)
-    # test_dataset = load_data(args.test_path)
-
-    # test_dataset = HandAnnotatedDataset("./page-txts", "annotations.json", tokenizer)
-    # test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True, num_workers=0)
-    # print("Test dataset loaded and DataLoader created.")
+    test_dataset = load_data(args.test_path)
+    print("Datasets loaded and DataLoaders created.")
 
     trainer_settings = {
         "epochs": args.epochs,
@@ -89,5 +87,4 @@ if __name__ == "__main__":
     tokenizer.save_vocabulary(trainer_settings["output_folder"])
     print("Tokenizer saved.")
 
-    # trainer.evaluate(test_dataset)
-
+    trainer.evaluate(test_dataset)

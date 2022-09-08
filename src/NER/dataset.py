@@ -196,45 +196,6 @@ class AlignmentDataset(torch.utils.data.Dataset):
     #                 print(f"You should increase maximum length and re-check the longest sequence found.", file=handle)
 
 
-# class HandAnnotatedDataset(AlignmentDataset):
-#     def __init__(self, ocr_path: str, alig_path: str, tokenizer, max_len: int=256):
-#         self.data = self.load_data(ocr_path, alig_path)
-#         self.tokenizer = tokenizer
-#         self.max_len=max_len
-#
-#     def load_data(self, ocr_path: str, alig_path: str) -> list:
-#         res = []
-#
-#         with open(alig_path, "r") as json_f:
-#             json_data = json.load(json_f)
-#
-#         for annotated_file in json_data:
-#             if "label" in annotated_file:
-#                 offset_format = []
-#
-#                 filename = annotated_file["text"].rpartition("/")[2]
-#
-#                 for annotation in annotated_file["label"]:
-#                     label = annotation["labels"][0]
-#                     start = annotation["start"]
-#                     end = annotation["end"]
-#
-#                     offset_format.append((start, end, label))
-#
-#                 with open(os.path.join(ocr_path, filename), 'r') as f:
-#                     text = f.read()
-#
-#                 offset_format.sort(key=lambda x: x[0])
-#
-#                 res.append((text, offset_format))
-#
-#         return res
-#
-#     def __len__(self):
-#         return len(self.data)
-#
-
-
 def parse_arguments():
     import argparse
     parser = argparse.ArgumentParser()
@@ -262,4 +223,3 @@ def main():
 
 if __name__ == "__main__":
     exit(main())
-

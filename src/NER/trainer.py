@@ -19,13 +19,7 @@ class Trainer:
         self.max_norm = settings["max_grad_norm"]
         self.num_labels = settings["num_labels"]
         self.output_folder = settings["output_folder"]
-        # self.load = settings["load"]
         # self.debug = settings["debug"]
-
-        # if self.load:
-        #     checkpoint = torch.load(os.path.join(self.output_folder, "mzkbert.tar"))
-        #     self.model.load_state_dict(checkpoint["model_state_dict"])
-        #     self.optim.load_state_dict(checkpoint["optim_state_dict"])
 
         # Disable BERT training
         if not settings["bert"]:
@@ -121,12 +115,6 @@ class Trainer:
 
             self.model.save(os.path.join(self.output_folder, f"checkpoint_{epoch+1:03d}.pth"))
 
-            # torch.save({
-            #             "epoch": self.epochs,
-            #             "model_state_dict": self.model.state_dict(),
-            #             "optim_state_dict": self.optim.state_dict(),
-            # }, os.path.join(self.output_folder, "mzkbert.tar"))
-            #
             # if self.debug:
             #     self.print_epoch_example(example_logits, example_labels, example_ids, example_offset_mapping, epoch)
 
@@ -173,35 +161,35 @@ class Trainer:
 
         return accuracy_score(labels_acc.cpu().numpy(), predictions_acc.cpu().numpy()), labels_acc, predictions_acc
 
-    def print_epoch_example(self, logits_, labels_, ids_, offset_mapping_, epoch):
-        with open("debug.txt", "a") as f:
-            print("\n----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
-            print(f"Examples from first batch in epoch {epoch + 1}", file=f)
+    # def print_epoch_example(self, logits_, labels_, ids_, offset_mapping_, epoch):
+    #     with open("debug.txt", "a") as f:
+    #         print("\n----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
+    #         print(f"Examples from first batch in epoch {epoch + 1}", file=f)
 
-        for logits, labels, ids, offset_mapping in zip(logits_, labels_, ids_, offset_mapping_):
-            active_logits = logits.view(-1, self.num_labels)
-            flattened_predictions = torch.argmax(active_logits, axis=1)
+    #     for logits, labels, ids, offset_mapping in zip(logits_, labels_, ids_, offset_mapping_):
+    #         active_logits = logits.view(-1, self.num_labels)
+    #         flattened_predictions = torch.argmax(active_logits, axis=1)
 
-            tokens = self.tokenizer.convert_ids_to_tokens(ids.squeeze().tolist())
-            token_predictions = [IDS2LABELS[i] for i in flattened_predictions.cpu().numpy()]
+    #         tokens = self.tokenizer.convert_ids_to_tokens(ids.squeeze().tolist())
+    #         token_predictions = [IDS2LABELS[i] for i in flattened_predictions.cpu().numpy()]
 
-            out_labels = []
-            for label in labels:
-                try:
-                    out_labels.append(IDS2LABELS[label.item()])
-                except KeyError:
-                    out_labels.append("-")
+    #         out_labels = []
+    #         for label in labels:
+    #             try:
+    #                 out_labels.append(IDS2LABELS[label.item()])
+    #             except KeyError:
+    #                 out_labels.append("-")
 
-            tokens_print = "Tokens:       "
-            truth_print =  "Ground truth: "
-            pred_print =   "Prediction:   "
+    #         tokens_print = "Tokens:       "
+    #         truth_print =  "Ground truth: "
+    #         pred_print =   "Prediction:   "
 
-            for t, o, p in zip(tokens, out_labels, token_predictions):
-                tokens_print += f"{t:<16}"
-                truth_print += f"{o:<16}"
-                pred_print += f"{p:<16}"
+    #         for t, o, p in zip(tokens, out_labels, token_predictions):
+    #             tokens_print += f"{t:<16}"
+    #             truth_print += f"{o:<16}"
+    #             pred_print += f"{p:<16}"
 
-            with open("debug.txt", "a") as f:
-                print(f"\n{tokens_print}", file=f)
-                print(truth_print, file=f)
-                print(f"{pred_print}", file=f)
+    #         with open("debug.txt", "a") as f:
+    #             print(f"\n{tokens_print}", file=f)
+    #             print(truth_print, file=f)
+    #             print(f"{pred_print}", file=f)
