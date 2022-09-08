@@ -22,3 +22,9 @@ alignments-fuzzy/
 overtraining/
 problems/
 __pycache__/
+experiments/
+data/alignment.trn
+data/alignment.val
+data/alignment-fuzzy.zip
+data/all-karticky-ocr/
+data/alignments.zip
