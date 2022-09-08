@@ -23,7 +23,7 @@ class MZKBert(torch.nn.Module):
 
         self.x3 = torch.nn.Linear(512, self.num_labels)
 
-    def forward(self, input_ids, attention_mask, labels):
+    def forward(self, input_ids, attention_mask, labels=None):
         bert_outputs = self.bert(input_ids, attention_mask=attention_mask)
         outputs = self.d0(bert_outputs[0])
 
@@ -37,8 +37,10 @@ class MZKBert(torch.nn.Module):
 
         outputs = self.x3(outputs)
         
-        loss_fn = torch.nn.CrossEntropyLoss()
-        loss = loss_fn(outputs.view(-1, self.num_labels), labels.view(-1))
+        loss = None
+        if labels is not None:
+            loss_fn = torch.nn.CrossEntropyLoss()
+            loss = loss_fn(outputs.view(-1, self.num_labels), labels.view(-1))
 
         outputs = (outputs,) + bert_outputs[2:]
 
@@ -51,7 +53,7 @@ class MZKBert(torch.nn.Module):
         return next(self.parameters()).device
 
 
-def build_model(num_labels, model_path=None, pretrained_bert_path=None):
+def build_model(num_labels, model_path=None, pretrained_bert_path="bert-base-multilingual-uncased"):
     model = MZKBert(num_labels=num_labels, pretrained_bert_path=pretrained_bert_path)
 
     if model_path is not None:
@@ -59,4 +61,3 @@ def build_model(num_labels, model_path=None, pretrained_bert_path=None):
         print(f"Model loaded from '{model_path}'.")
 
     return model
-
