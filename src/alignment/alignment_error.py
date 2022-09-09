@@ -46,6 +46,8 @@ import json
 import argparse
 
 from src.helper import LABELS
+# from seqeval.metrics import classification_report
+from sklearn.metrics import classification_report
 
 class ResultManager:
     def __init__(self, filenames: list):
@@ -67,6 +69,8 @@ class ResultManager:
         self.example_files = {filename: [] for filename in filenames}
 
         self.filenames = filenames
+
+        self.classification_report = None
 
     def increment(self, intersection: int, union: int, filename: str, label: str):
         self.total_intersection += intersection
@@ -137,6 +141,9 @@ class ResultManager:
             else:
                 print(f"{label:<14}  {(1-(intersection / union)):.4f}")
 
+        if self.classification_report is not None:
+            print(f"\n{self.classification_report}")
+
 
 EMPTY_MASK = '0'
 
@@ -160,6 +167,7 @@ MASK = {
     }
 
 INV_MASK = {val: key for key, val in MASK.items()}
+INV_MASK["0"] = "O"
 
 
 def parse_arguments():
@@ -279,12 +287,18 @@ def run_matching_mode(data: dict, result_manager: ResultManager, ocr_path: str):
 
 
 def run_masked_mode(data: dict, result_manager: ResultManager, ocr_path: str):
+    all_anno = []
+    all_alig = []
+
     for filename, (file_annotations, file_alignments) in data.items():
         with open(os.path.join(ocr_path, filename), "r") as f:
             ocr = f.read()
 
             masked_annotation = create_mask(file_annotations, ocr)
             masked_alignment = create_mask(file_alignments, ocr)
+
+            all_anno.extend(list(masked_annotation))
+            all_alig.extend(list(masked_alignment))
             
             for anno_char, alig_char in zip(masked_annotation, masked_alignment):
                 if anno_char == alig_char and alig_char != EMPTY_MASK:
@@ -294,6 +308,11 @@ def run_masked_mode(data: dict, result_manager: ResultManager, ocr_path: str):
                 if alig_char != anno_char:
                     label = INV_MASK[anno_char] if anno_char != EMPTY_MASK else INV_MASK[alig_char]
                     result_manager.increment(0, 1, filename, label)
+
+    all_anno = [INV_MASK[c] for c in all_anno]
+    all_alig = [INV_MASK[c] for c in all_alig]
+
+    result_manager.classification_report = classification_report(all_anno, all_alig, zero_division=0)
 
 
 if __name__ == "__main__":
