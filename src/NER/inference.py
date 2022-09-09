@@ -69,9 +69,23 @@ def save_result(path: str, result: list) -> None:
     output_folder = path.rpartition("/")[0]
     os.makedirs(output_folder, exist_ok=True)
 
+    # Remove empty tokens and store labels (preds without I/B-)
+    filtered = [(token, pred[2:]) for token, pred in result if pred != "O"]
+
+    fields = {label: "" for label in set([x[1] for x in filtered])}
+
+    for token, label in filtered:
+        fields[label] += f" {token}"
+
     with open(path, "w") as f:
-        for token, pred in result:
-            print(f"{token:<30}{pred}", file=f)
+        for key, val in fields.items():
+            print(f"{key} {repr(val.strip())}", file=f)
+
+
+def save_output_dataset(data: list, path: str) -> None:
+    with open(os.path.join(path, "dataset.all"), "w") as f:
+        for line in data:
+            print(line, file=f)
 
 
 def main() -> int:
@@ -85,13 +99,22 @@ def main() -> int:
 
     tokenizer = BertTokenizerFast.from_pretrained(args.tokenizer_path)
 
+    output_dataset = []
+
     for root, _, filenames in os.walk(args.data_path):
         for filename in filenames:
             file_path = os.path.join(root, filename)
+            line = f"{filename}"
             
             result = infer(get_ocr(file_path), tokenizer, model, args.max_len)
 
+            for token, pred in result:
+                line += f"\t{token} {pred}"
+            output_dataset.append(line)
+
             save_result(os.path.join(args.save_path, filename), result)
+
+    save_output_dataset(output_dataset, args.save_path)
     
     return 0
 
