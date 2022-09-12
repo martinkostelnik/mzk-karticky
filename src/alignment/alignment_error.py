@@ -46,7 +46,6 @@ import json
 import argparse
 
 from src.helper import LABELS
-# from seqeval.metrics import classification_report
 from sklearn.metrics import classification_report
 
 class ResultManager:
