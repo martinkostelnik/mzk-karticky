@@ -46,7 +46,9 @@ def logits_to_preds(tokenizer, logits, ids, offset_mapping, num_labels: int) -> 
 
 
 def infer(ocr: str, tokenizer, model, max_len: int) -> list:
-    encoding = tokenizer(ocr.split(),
+    words = ocr.split()
+
+    encoding = tokenizer(words,
                          padding="max_length",
                          is_split_into_words=True,
                          return_offsets_mapping=True,
@@ -62,24 +64,54 @@ def infer(ocr: str, tokenizer, model, max_len: int) -> list:
 
     preds = logits_to_preds(tokenizer, logits, ids, encoding["offset_mapping"], model.num_labels)
 
-    return list(zip(ocr.split(), preds))
+    return list(zip(words, preds))
 
 
-def save_result(path: str, result: list) -> None:
+def find_offsets(text: str, data: list) -> list:
+    result = []
+
+    char_index = 0
+    token_index = 0
+
+    while token_index < len(data):
+        token, label = data[token_index]
+        label = label if label == "O" else label[2:]
+
+        text_slice = text[char_index:char_index+len(token)]
+
+        if text_slice == token:
+            result.append((token, label, char_index, char_index + len(token)))
+            token_index += 1
+            char_index += len(token)
+        else:
+            char_index += 1
+
+    return result
+
+
+def concat_token_offsets(offsets: list) -> list:
+    result = []
+
+    current_label = ""
+
+    for _, label, from_, to in offsets:
+        if label != current_label:
+            result.append((label, from_, to))
+            current_label = label
+        else:
+            _, current_from, _ = result[-1]
+            result[-1] = (label, current_from, to)
+
+    return result
+
+
+def save_result(path: str, result: list, ocr: str) -> None:
     output_folder = path.rpartition("/")[0]
     os.makedirs(output_folder, exist_ok=True)
 
-    # Remove empty tokens and store labels (preds without I/B-)
-    filtered = [(token, pred[2:]) for token, pred in result if pred != "O"]
-
-    fields = {label: "" for label in set([x[1] for x in filtered])}
-
-    for token, label in filtered:
-        fields[label] += f" {token}"
-
     with open(path, "w") as f:
-        for key, val in fields.items():
-            print(f"{key} {repr(val.strip())}", file=f)
+        for label, from_, to in result:
+            print(f"{label}\t{repr(ocr[from_:to])}\t{from_}\t{to}", file=f)
 
 
 def save_output_dataset(data: list, path: str) -> None:
@@ -104,15 +136,23 @@ def main() -> int:
     for root, _, filenames in os.walk(args.data_path):
         for filename in filenames:
             file_path = os.path.join(root, filename)
-            line = f"{filename}"
-            
-            result = infer(get_ocr(file_path), tokenizer, model, args.max_len)
 
-            for token, pred in result:
-                line += f"\t{token} {pred}"
+            line = f"{file_path}"
+
+            ocr = get_ocr(file_path)
+            
+            result = infer(ocr, tokenizer, model, args.max_len)
+
+            token_offsets = find_offsets(ocr, result)
+            alignments = concat_token_offsets(token_offsets)
+            alignments = [alignment for alignment in alignments if alignment[0] != "O"]
+
+            for label, from_, to in alignments:
+                line += f"\t{label} {from_} {to}"
+
             output_dataset.append(line)
 
-            save_result(os.path.join(args.save_path, filename), result)
+            save_result(os.path.join(args.save_path, filename), alignments, ocr)
 
     save_output_dataset(output_dataset, args.save_path)
     
