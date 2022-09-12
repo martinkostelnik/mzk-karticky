@@ -178,7 +178,7 @@ def parse_arguments():
 
     parser.add_argument("--mode", type=int, default=1, help="Error calculation mode.", required=True)
 
-    parser.add_argument("--output", help="Path to folder where output will be saved.", required=True)
+    parser.add_argument("--output", help="Path to folder where output will be saved.")
 
     args = parser.parse_args()
 
@@ -317,13 +317,12 @@ def run_masked_mode(data: dict, result_manager: ResultManager, ocr_path: str):
 if __name__ == "__main__":
     args = parse_arguments()
 
-    os.makedirs(args.output, exist_ok=True)
-
     data = load_data(annotation_path=args.json, alignment_path=args.alig)
     
     result = ResultManager(data.keys())
  
     if args.mode == 1:
+        os.makedirs(args.output, exist_ok=True)
         run_matching_mode(data=data, result_manager=result, ocr_path=args.ocr)
         result.save_file_errors(args.output)
     elif args.mode == 2:
