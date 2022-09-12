@@ -3,10 +3,9 @@ import typing
 import argparse
 
 from model import build_model
-from dataset import IDS2LABELS
+from helper import IDS2LABELS, MAX_TOKENS_LEN
 
 import torch
-from transformers import BertTokenizerFast
 
 
 def parse_arguments():
@@ -17,9 +16,6 @@ def parse_arguments():
     parser.add_argument("--tokenizer-path", help="Path to a tokenizer.")
     parser.add_argument("--save-path", help="Path to a output directory.")
 
-    parser.add_argument("--labels", type=int, default=33, help="Number of labels, using this should be avoided.")
-    parser.add_argument("--max-len", type=int, default=256, help="Max encoding length, using this should be avoided.")
-
     args = parser.parse_args()
     return args
 
@@ -29,8 +25,8 @@ def get_ocr(file_path: str) -> str:
         return f.read()
 
 
-def logits_to_preds(tokenizer, logits, ids, offset_mapping, num_labels: int) -> list:
-    active_logits = logits.view(-1, num_labels)
+def logits_to_preds(tokenizer, logits, ids, offset_mapping) -> list:
+    active_logits = logits.view(-1, NUM_LABELS)
     flattened_predictions = torch.argmax(active_logits, axis=1)
 
     wordpieces = tokenizer.convert_ids_to_tokens(ids.squeeze().tolist())
@@ -53,16 +49,18 @@ def infer(ocr: str, tokenizer, model, max_len: int) -> list:
                          is_split_into_words=True,
                          return_offsets_mapping=True,
                          truncation=True,
-                         max_length=max_len,
+                         max_length=MAX_TOKENS_LEN,
                          return_tensors="pt")
 
-    ids = encoding["input_ids"].to(model.get_device())
-    mask = encoding["attention_mask"].to(model.get_device())
+    device = model.get_device()
+
+    ids = encoding["input_ids"].to(device)
+    mask = encoding["attention_mask"].to(device)
 
     with torch.no_grad():
         logits = model(ids, attention_mask=mask)[1][0]
 
-    preds = logits_to_preds(tokenizer, logits, ids, encoding["offset_mapping"], model.num_labels)
+    preds = logits_to_preds(tokenizer, logits, ids, encoding["offset_mapping"])
 
     return list(zip(words, preds))
 
@@ -125,7 +123,7 @@ def main() -> int:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = build_model(num_labels=args.labels, model_path=args.model_path)
+    model = build_model(model_path=args.model_path)
     model = model.to(device)
     model.eval()
 

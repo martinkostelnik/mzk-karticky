@@ -3,12 +3,14 @@ import typing
 
 from transformers import BertModel
 
+from helper import NUM_LABELS, BERT_BASE_NAME
+
 
 class MZKBert(torch.nn.Module):
-    def __init__(self, num_labels: int, pretrained_bert_path="bert-base-multilingual-uncased"):
+    def __init__(self, pretrained_bert_path=BERT_BASE_NAME):
         super(MZKBert, self).__init__()
 
-        self.num_labels = num_labels
+        self.num_labels = NUM_LABELS
         
         self.bert = BertModel.from_pretrained(pretrained_bert_path)
         self.d0 = torch.nn.Dropout(0.1)
@@ -53,8 +55,8 @@ class MZKBert(torch.nn.Module):
         return next(self.parameters()).device
 
 
-def build_model(num_labels, model_path=None, pretrained_bert_path="bert-base-multilingual-uncased"):
-    model = MZKBert(num_labels=num_labels, pretrained_bert_path=pretrained_bert_path)
+def build_model(model_path=None, pretrained_bert_path=BERT_BASE_NAME):
+    model = MZKBert(pretrained_bert_path=pretrained_bert_path)
 
     if model_path is not None:
         model.load_state_dict(torch.load(model_path))

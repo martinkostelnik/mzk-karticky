@@ -3,9 +3,7 @@ import numpy as np
 import torch
 import os
 
-from dataset import IDS2LABELS
-from sklearn.metrics import accuracy_score
-from seqeval.metrics import classification_report
+from helper import NUM_LABELS, IDS2LABELS, calculate_acc
 
 
 class Trainer:
@@ -17,15 +15,14 @@ class Trainer:
         self.model = model
         self.optim = torch.optim.Adam(self.model.parameters(), lr=settings["learning_rate"])
         self.max_norm = settings["max_grad_norm"]
-        self.num_labels = settings["num_labels"]
+        self.num_labels = NUM_LABELS
         self.output_folder = settings["output_folder"]
         # self.debug = settings["debug"]
 
         # Disable BERT training
         if not settings["bert"]:
             for name, param in self.model.bert.named_parameters():
-                if "classifier" not in name:
-                    param.requires_grad = False
+                param.requires_grad = False
 
         # if self.debug:
         #     with open("debug.txt", "a") as f:
@@ -82,7 +79,7 @@ class Trainer:
                 epoch_loss_train += loss
                 steps_loss += loss
 
-                acc = self.calculate_acc(batch["labels"], logits)[0]
+                acc = calculate_acc(batch["labels"], logits)[0]
                 epoch_acc_train += acc
                 steps_acc += acc
 
@@ -107,7 +104,7 @@ class Trainer:
                 loss, logits = self.test_step(batch)
 
                 epoch_loss_val += loss
-                epoch_acc_val += self.calculate_acc(batch["labels"], logits)[0]
+                epoch_acc_val += calculate_acc(batch["labels"], logits)[0]
 
                 val_steps += 1
 
@@ -118,48 +115,6 @@ class Trainer:
             # if self.debug:
             #     self.print_epoch_example(example_logits, example_labels, example_ids, example_offset_mapping, epoch)
 
-    def evaluate(self, test_data_loader):
-        self.model.eval()
-
-        test_loss = 0
-        test_acc = 0
-
-        steps = 0
-
-        report_labels = []
-        report_preds = []
-
-        # Test loop
-        for batch in test_data_loader:
-            loss, logits = self.test_step(batch)
-
-            test_loss += loss
-            acc, l, p = self.calculate_acc(batch["labels"], logits)
-
-            report_labels.append(l)
-            report_preds.append(p)
-
-            test_acc += acc
-
-            steps += 1
-
-        l = [[IDS2LABELS[id.item()] for id in l_] for l_ in report_labels]
-        p = [[IDS2LABELS[id.item()] for id in p_] for p_ in report_preds]
-
-        print(f"Test loss: {test_loss / steps}")
-        print(f"Test acc: {test_acc / steps}")
-        print(classification_report(l, p, zero_division=0))
-
-    def calculate_acc(self, labels, logits):
-        flattened_targets = labels.view(-1)  # shape (batch_size * seq_len,)
-        active_logits = logits.view(-1, self.num_labels)  # shape (batch_size * seq_len, num_labels)
-        flattened_predictions = torch.argmax(active_logits, axis=1).to(flattened_targets.device)  # shape (batch_size * seq_len,)
-        active_accuracy = labels.view(-1) != -100  # shape (batch_size, seq_len)
-
-        labels_acc = torch.masked_select(flattened_targets, active_accuracy)
-        predictions_acc = torch.masked_select(flattened_predictions, active_accuracy)
-
-        return accuracy_score(labels_acc.cpu().numpy(), predictions_acc.cpu().numpy()), labels_acc, predictions_acc
 
     # def print_epoch_example(self, logits_, labels_, ids_, offset_mapping_, epoch):
     #     with open("debug.txt", "a") as f:

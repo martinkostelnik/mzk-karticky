@@ -7,13 +7,11 @@ import argparse
 import torch
 import os
 
-from transformers import BertForTokenClassification, BertTokenizerFast
-from torch.utils.data import random_split
-from datetime import datetime
+from transformers import BertTokenizerFast
 
-from trainer import Trainer
-from dataset import AlignmentDataset
 import model
+from trainer import Trainer
+from helper import BERT_BASE_NAME, load_dataset
 
 
 def parse_arguments():
@@ -26,8 +24,8 @@ def parse_arguments():
     parser.add_argument("--grad", type=int, default=10, help="Max grad norm")
 
     parser.add_argument("--model-path", help="Path to a model checkpoint.", default=None)
-    parser.add_argument("--bert-path", default="bert-base-multilingual-uncased", help="Path to a pretrained BERT model. This is NOT used if --model-path is specified.")
-    parser.add_argument("--tokenizer-path", default="bert-base-multilingual-uncased", help="Path to a tokenizer.")
+    parser.add_argument("--bert-path", default=BERT_BASE_NAME, help="Path to a pretrained BERT model. This is NOT used if --model-path is specified.")
+    parser.add_argument("--tokenizer-path", default=BERT_BASE_NAME, help="Path to a tokenizer.")
     parser.add_argument("--save-path", help="Path to a directory where checkpoints are stored.")
 
     parser.add_argument("--ocr-path", help="Path to folder containing ocr.")
@@ -35,16 +33,8 @@ def parse_arguments():
     parser.add_argument("--val-path", help="Path to a text file with validation data.")
     parser.add_argument("--test-path", help="Path to a text file with test data.")
 
-    parser.add_argument("--labels", type=int, default=33, help="Number of labels, using this should be avoided.")
-
     args = parser.parse_args()
     return args
-
-
-def load_dataset(data_path, ocr_path, batch_size, tokenizer, num_workers=0):
-    dataset = AlignmentDataset(data_path=data_path, ocr_path=ocr_path, tokenizer=tokenizer)
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    return data_loader
 
 
 if __name__ == "__main__":
@@ -53,8 +43,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
-    # model = BertForTokenClassification.from_pretrained(args.modelpath, num_labels=args.labels)
-    model = model.build_model(num_labels=args.labels, model_path=args.model_path, pretrained_bert_path=args.bert_path)
+    model = model.build_model(model_path=args.model_path, pretrained_bert_path=args.bert_path)
     model = model.to(device)
 
     tokenizer = BertTokenizerFast.from_pretrained(args.tokenizer_path)
@@ -70,7 +59,6 @@ if __name__ == "__main__":
         "epochs": args.epochs,
         "learning_rate": args.lr,
         "max_grad_norm": args.grad,
-        "num_labels": args.labels,
         "bert": args.train_bert,
         "output_folder": args.save_path
     }
@@ -86,5 +74,3 @@ if __name__ == "__main__":
 
     tokenizer.save_vocabulary(trainer_settings["output_folder"])
     print("Tokenizer saved.")
-
-    trainer.evaluate(test_dataset)

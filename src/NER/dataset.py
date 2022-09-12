@@ -1,24 +1,8 @@
-import numpy as np
 import typing
 import os
-import zipfile
 import torch
-import json
-import sys
-from tqdm import tqdm
 
-import pandas as pd
-
-
-LABELS = ["Author", "Title", "Original_title", "Publisher", "Pages", "Series", "Edition", "References", "ID",
-          "ISBN", "ISSN", "Topic", "Subtitle", "Date", "Institute", "Volume"]
-
-FORMAT = ["B", "I"]
-
-LABELS2IDS = {f"{c}-{label}": i*len(FORMAT) + j + 1 for i, label in enumerate(LABELS) for j, c in enumerate(FORMAT)}
-LABELS2IDS["O"] = 0
-
-IDS2LABELS = {v: k for k, v in LABELS2IDS.items()}
+import helper
 
 
 class Annotation:
@@ -45,10 +29,10 @@ class Alignment:
 
 
 class AlignmentDataset(torch.utils.data.Dataset):
-    def __init__(self, data_path: str, ocr_path: str, tokenizer, max_len: int=256):
+    def __init__(self, data_path: str, ocr_path: str, tokenizer):
         self.data: typing.List[Annotation] = []
         self.tokenizer = tokenizer
-        self.max_len = max_len
+        self.max_len = helper.MAX_TOKENS_LEN
 
         self.data_path = data_path
         self.ocr_path = ocr_path
@@ -94,7 +78,7 @@ class AlignmentDataset(torch.utils.data.Dataset):
                                   truncation=True,
                                   max_length=self.max_len)
 
-        labels = [LABELS2IDS[label] for label in iob]
+        labels = [helper.LABELS2IDS[label] for label in iob]
 
         encoded_labels = []
 
