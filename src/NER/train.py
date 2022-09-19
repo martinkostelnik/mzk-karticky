@@ -31,7 +31,7 @@ def parse_arguments():
     parser.add_argument("--tokenizer-path", default=BERT_BASE_NAME, help="Path to a tokenizer.")
     parser.add_argument("--save-path", help="Path to a directory where checkpoints are stored.")
 
-    parser.add_argument("--ocr-path", help="Path to folder containing ocr.")
+    parser.add_argument("--ocr-path", help="Path to either (1) root dir with OCR files or (2) LMDB with texts from OCR")
     parser.add_argument("--train-path", help="Path to a text file with training data.")
     parser.add_argument("--val-path", help="Path to a text file with validation data.")
     parser.add_argument("--test-path", help="Path to a text file with test data.")
