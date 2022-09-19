@@ -1,6 +1,7 @@
 import typing
 import os
 import torch
+import lmdb
 
 import helper
 
@@ -37,6 +38,8 @@ class AlignmentDataset(torch.utils.data.Dataset):
         self.data_path = data_path
         self.ocr_path = ocr_path
 
+        self._txn = lmdb.open(self.ocr_path, readonly=True, lock=False).begin() if "lmdb" in self.ocr_path else None
+
         self.load_data()
 
     def load_data(self) -> None:
@@ -46,15 +49,19 @@ class AlignmentDataset(torch.utils.data.Dataset):
                 if len(line) > 0:
                     self.data.append(self.parse_annotation(line))
 
-    def load_ocr_file(self, path):
-        with open(os.path.join(self.ocr_path, path), 'r') as f:
-            text = f.read()
+    def load_ocr(self, path):
+        if self._txn is not None:
+            text = self._txn.get(path.encode()).decode()
+
+        else:
+            with open(os.path.join(self.ocr_path, path), 'r') as f:
+                text = f.read()
 
         return text
 
     def parse_annotation(self, line):
         file_path, *alignments = line.split("\t")
-        return Annotation(file_path, self.load_ocr_file(file_path), self.parse_alignments(alignments))
+        return Annotation(file_path, self.load_ocr(file_path), self.parse_alignments(alignments))
 
     def parse_alignments(self, alignments):
         result = []
@@ -184,7 +191,7 @@ def parse_arguments():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path", help="Path to the alignments file.")
-    parser.add_argument("--ocr-dir", help="Path to the dir with OCR files.")
+    parser.add_argument("--ocr-path", help="Path to either (1) dir with OCR files or (2) LMDB with texts from OCR.")
     parser.add_argument("--tokenizer-path", help="Path to the tokenizer.")
 
     args = parser.parse_args()
@@ -197,7 +204,7 @@ def main():
     args = parse_arguments()
 
     tokenizer = BertTokenizerFast.from_pretrained(args.tokenizer_path)
-    dataset = AlignmentDataset(args.data_path, args.ocr_dir, tokenizer=tokenizer)
+    dataset = AlignmentDataset(args.data_path, args.ocr_path, tokenizer=tokenizer)
 
     print(f"Dataset size: {len(dataset)}")
     print(dataset[0])
