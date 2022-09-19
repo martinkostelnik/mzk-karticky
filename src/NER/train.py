@@ -6,6 +6,7 @@ owner = GPUOwner()
 import argparse
 import torch
 import os
+import sys
 
 from transformers import BertTokenizerFast
 
@@ -15,6 +16,8 @@ from helper import BERT_BASE_NAME, load_dataset
 
 
 def parse_arguments():
+    print(' '.join(sys.argv))
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--train-bert", action="store_true", default=False, help="Whether to train BERT as well. Note that this extremely increases training time.")
