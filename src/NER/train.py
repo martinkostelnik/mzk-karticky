@@ -12,7 +12,10 @@ from transformers import BertTokenizerFast
 
 import model
 from trainer import Trainer
+from test import Tester
 from helper import BERT_BASE_NAME, load_dataset
+
+from datetime import datetime
 
 
 def parse_arguments():
@@ -53,10 +56,15 @@ if __name__ == "__main__":
 
     load_data = partial(load_dataset, ocr_path=args.ocr_path, batch_size=args.batch_size, tokenizer=tokenizer)
 
+    start = datetime.now()
     train_dataset = load_data(args.train_path)
+    end = datetime.now()
     val_dataset = load_data(args.val_path)
     test_dataset = load_data(args.test_path)
     print("Datasets loaded and DataLoaders created.")
+    tdelta = end - start
+    print(f"Time it took to load training data ({len(train_dataset) * args.batch_size} samples): {tdelta}")
+    print(f"Which is {len(train_dataset) * args.batch_size / (tdelta.total_seconds())} samples/sec")
 
     trainer_settings = {
         "epochs": args.epochs,
@@ -74,6 +82,13 @@ if __name__ == "__main__":
     print("Training starts ...")
     trainer.train(train_dataset, val_dataset)
     print("Training finished.")
+
+    tester = Tester(model)
+    print("Tester created.")
+
+    print("Testing starts ...")
+    tester.test(test_dataset)
+    print("Testing finished.")
 
     tokenizer.save_vocabulary(trainer_settings["output_folder"])
     print("Tokenizer saved.")
