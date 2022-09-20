@@ -38,3 +38,8 @@ def calculate_acc(labels, logits):
     predictions_acc = torch.masked_select(flattened_predictions, active_accuracy)
 
     return accuracy_score(labels_acc.cpu().numpy(), predictions_acc.cpu().numpy()), labels_acc, predictions_acc
+
+def calculate_confidence(logits):
+    fn = torch.nn.Softmax(dim=2)
+
+    return fn(logits).cpu().numpy()
