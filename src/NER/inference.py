@@ -1,11 +1,14 @@
 import os
 import typing
 import argparse
+import numpy as np
 
 from model import build_model
-from helper import IDS2LABELS, MAX_TOKENS_LEN
+from helper import IDS2LABELS, MAX_TOKENS_LEN, NUM_LABELS, calculate_confidence
+from typing import Callable
 
 import torch
+from transformers import BertTokenizerFast
 
 
 def parse_arguments():
@@ -15,9 +18,29 @@ def parse_arguments():
     parser.add_argument("--model-path", help="Path to a trained model.")
     parser.add_argument("--tokenizer-path", help="Path to a tokenizer.")
     parser.add_argument("--save-path", help="Path to a output directory.")
+    
+    parser.add_argument("--threshold", default=0.0, type=float, help="Threshold for selecting field with enough model confidence.")
+    parser.add_argument("--aggfunc", default="prod", type=str, help="Confidence aggregation function.")
 
     args = parser.parse_args()
     return args
+
+
+def get_aggfunc(func_name: str) -> Callable:
+    if func_name == "prod":
+        return np.prod
+
+    if func_name == "mean":
+        return np.mean
+
+    if func_name == "max":
+        return np.max
+
+    if func_name == "min":
+        return np.min
+
+    if func_name == "median":
+        return np.median
 
 
 def get_ocr(file_path: str) -> str:
@@ -41,7 +64,7 @@ def logits_to_preds(tokenizer, logits, ids, offset_mapping) -> list:
     return result
 
 
-def infer(ocr: str, tokenizer, model, max_len: int) -> list:
+def infer(ocr: str, tokenizer, model) -> list:
     words = ocr.split()
 
     encoding = tokenizer(words,
@@ -61,8 +84,9 @@ def infer(ocr: str, tokenizer, model, max_len: int) -> list:
         logits = model(ids, attention_mask=mask)[1][0]
 
     preds = logits_to_preds(tokenizer, logits, ids, encoding["offset_mapping"])
+    confidence = calculate_confidence(logits)[1:len(preds) + 1].tolist()
 
-    return list(zip(words, preds))
+    return list(zip(words, preds, confidence))
 
 
 def find_offsets(text: str, data: list) -> list:
@@ -72,13 +96,13 @@ def find_offsets(text: str, data: list) -> list:
     token_index = 0
 
     while token_index < len(data):
-        token, label = data[token_index]
+        token, label, conf = data[token_index]
         label = label if label == "O" else label[2:]
 
         text_slice = text[char_index:char_index+len(token)]
 
         if text_slice == token:
-            result.append((token, label, char_index, char_index + len(token)))
+            result.append((token, label, char_index, char_index + len(token), conf))
             token_index += 1
             char_index += len(token)
         else:
@@ -92,13 +116,23 @@ def concat_token_offsets(offsets: list) -> list:
 
     current_label = ""
 
-    for _, label, from_, to in offsets:
+    for _, label, from_, to, confidence in offsets:
         if label != current_label:
-            result.append((label, from_, to))
+            result.append((label, from_, to, [confidence]))
             current_label = label
         else:
-            _, current_from, _ = result[-1]
-            result[-1] = (label, current_from, to)
+            _, current_from, _, confidences = result[-1]
+            confidences.append(confidence)
+            result[-1] = (label, current_from, to, confidences)
+
+    return result
+
+
+def aggregate_confidence(alignments: list, aggfunc: Callable) -> list:
+    result = []
+
+    for label, from_, to, confidences in alignments:
+        result.append((label, from_, to, aggfunc(confidences).item()))
 
     return result
 
@@ -108,7 +142,7 @@ def save_result(path: str, result: list, ocr: str) -> None:
     os.makedirs(output_folder, exist_ok=True)
 
     with open(path, "w") as f:
-        for label, from_, to in result:
+        for label, from_, to, _ in result:
             print(f"{label}\t{repr(ocr[from_:to])}\t{from_}\t{to}", file=f)
 
 
@@ -131,6 +165,11 @@ def main() -> int:
 
     output_dataset = []
 
+    print(f"Aggregation function: {args.aggfunc}")
+    print(f"Confidence threshold: {args.threshold}")
+    aggfunc = get_aggfunc(args.aggfunc)
+    total = 0
+
     for root, _, filenames in os.walk(args.data_path):
         for filename in filenames:
             file_path = os.path.join(root, filename)
@@ -139,14 +178,18 @@ def main() -> int:
 
             ocr = get_ocr(file_path)
             
-            result = infer(ocr, tokenizer, model, args.max_len)
+            result = infer(ocr, tokenizer, model)
 
             token_offsets = find_offsets(ocr, result)
             alignments = concat_token_offsets(token_offsets)
             alignments = [alignment for alignment in alignments if alignment[0] != "O"]
+        
+            alignments = aggregate_confidence(alignments, aggfunc)
+            alignments = [alignment for alignment in alignments if alignment[3] >= args.threshold]
 
-            for label, from_, to in alignments:
+            for label, from_, to, _ in alignments:
                 line += f"\t{label} {from_} {to}"
+                total += 1
 
             output_dataset.append(line)
 

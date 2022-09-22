@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 from sklearn.metrics import accuracy_score
 
@@ -40,6 +41,4 @@ def calculate_acc(labels, logits):
     return accuracy_score(labels_acc.cpu().numpy(), predictions_acc.cpu().numpy()), labels_acc, predictions_acc
 
 def calculate_confidence(logits):
-    fn = torch.nn.Softmax(dim=2)
-
-    return fn(logits).cpu().numpy()
+    return torch.nn.functional.softmax(logits, dim=2).cpu().numpy().max(axis=2).flatten()
