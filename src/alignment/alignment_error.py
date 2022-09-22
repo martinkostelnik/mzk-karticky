@@ -241,6 +241,9 @@ def load_data(annotation_path: str, alignment_path: str) -> list:
                     from_ = int(s[2])
                     to = int(s[3])
 
+                    if label == "Original_title":
+                        label = "Original title"
+
                     alignment[label].append((from_, to))
 
         res[filename] = (annotation, alignment)
