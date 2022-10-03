@@ -28,3 +28,5 @@ data/alignment.val
 data/alignment-fuzzy.zip
 data/all-karticky-ocr/
 data/alignments.zip
+data/vocab.txt
+src/bert/run.sh
