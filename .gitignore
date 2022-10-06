@@ -30,3 +30,7 @@ data/all-karticky-ocr/
 data/alignments.zip
 data/vocab.txt
 src/bert/run.sh
+data/tokenizer/
+test-inference/
+test-training-output/
+test-training.sh

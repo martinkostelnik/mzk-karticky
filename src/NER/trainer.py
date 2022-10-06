@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import os
 
-from helper import NUM_LABELS, IDS2LABELS, calculate_acc
+from helper import calculate_acc
 
 
 class Trainer:
@@ -15,19 +15,15 @@ class Trainer:
         self.model = model
         self.optim = torch.optim.Adam(self.model.parameters(), lr=settings["learning_rate"])
         self.max_norm = settings["max_grad_norm"]
-        self.num_labels = NUM_LABELS
+
+        # Set misc settings
+        self.num_labels = model.config.num_labels
         self.output_folder = settings["output_folder"]
-        # self.debug = settings["debug"]
 
         # Disable BERT training
         if not settings["bert"]:
-            for name, param in self.model.bert.named_parameters():
+            for _, param in self.model.bert.named_parameters():
                 param.requires_grad = False
-
-        # if self.debug:
-        #     with open("debug.txt", "a") as f:
-        #         print("\n----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
-        #         print(f"Training on {self.device}", file=f)
 
     def train_step(self, batch):
         loss, logits = self.forward(batch)
@@ -79,7 +75,7 @@ class Trainer:
                 epoch_loss_train += loss
                 steps_loss += loss
 
-                acc = calculate_acc(batch["labels"], logits)[0]
+                acc = calculate_acc(batch["labels"], logits, self.model.num_labels)[0]
                 epoch_acc_train += acc
                 steps_acc += acc
 
@@ -91,60 +87,15 @@ class Trainer:
                     steps_loss = 0
                     steps_acc = 0
 
-                # # Save example input/outputs from first batch
-                # if i == 0:
-                #     example_ids = batch["input_ids"]
-                #     example_logits = logits
-                #     example_labels = batch["labels"]
-                #     example_offset_mapping = batch["offset_mapping"]
-
             # Validation loop
             self.model.eval()
             for batch in val_data_loader:
                 loss, logits = self.test_step(batch)
 
                 epoch_loss_val += loss
-                epoch_acc_val += calculate_acc(batch["labels"], logits)[0]
+                epoch_acc_val += calculate_acc(batch["labels"], logits, self.model.num_labels)[0]
 
                 val_steps += 1
 
             print(f"Epoch {epoch+1} | Loss: {epoch_loss_train / train_steps} | Acc: {epoch_acc_train / train_steps} | Val_Loss: {epoch_loss_val / val_steps} | Val_Acc: {epoch_acc_val / val_steps}")
-
             self.model.save(os.path.join(self.output_folder, f"checkpoint_{epoch+1:03d}.pth"))
-
-            # if self.debug:
-            #     self.print_epoch_example(example_logits, example_labels, example_ids, example_offset_mapping, epoch)
-
-
-    # def print_epoch_example(self, logits_, labels_, ids_, offset_mapping_, epoch):
-    #     with open("debug.txt", "a") as f:
-    #         print("\n----------------------------------------------------------------------------------------------------------------------------------\n", file=f)
-    #         print(f"Examples from first batch in epoch {epoch + 1}", file=f)
-
-    #     for logits, labels, ids, offset_mapping in zip(logits_, labels_, ids_, offset_mapping_):
-    #         active_logits = logits.view(-1, self.num_labels)
-    #         flattened_predictions = torch.argmax(active_logits, axis=1)
-
-    #         tokens = self.tokenizer.convert_ids_to_tokens(ids.squeeze().tolist())
-    #         token_predictions = [IDS2LABELS[i] for i in flattened_predictions.cpu().numpy()]
-
-    #         out_labels = []
-    #         for label in labels:
-    #             try:
-    #                 out_labels.append(IDS2LABELS[label.item()])
-    #             except KeyError:
-    #                 out_labels.append("-")
-
-    #         tokens_print = "Tokens:       "
-    #         truth_print =  "Ground truth: "
-    #         pred_print =   "Prediction:   "
-
-    #         for t, o, p in zip(tokens, out_labels, token_predictions):
-    #             tokens_print += f"{t:<16}"
-    #             truth_print += f"{o:<16}"
-    #             pred_print += f"{p:<16}"
-
-    #         with open("debug.txt", "a") as f:
-    #             print(f"\n{tokens_print}", file=f)
-    #             print(truth_print, file=f)
-    #             print(f"{pred_print}", file=f)

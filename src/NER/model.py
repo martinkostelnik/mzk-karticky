@@ -1,18 +1,18 @@
 import torch
 import typing
+import helper
 
-from transformers import BertModel
-
-from helper import NUM_LABELS, BERT_BASE_NAME
+from transformers import BertModel, AutoConfig
 
 
 class MZKBert(torch.nn.Module):
-    def __init__(self, pretrained_bert_path=BERT_BASE_NAME):
+    def __init__(self, bert, model_config=helper.ModelConfig()):
         super(MZKBert, self).__init__()
 
-        self.num_labels = NUM_LABELS
-        
-        self.bert = BertModel.from_pretrained(pretrained_bert_path)
+        self.num_labels = model_config.num_labels
+        self.config = model_config
+
+        self.bert = bert
         self.d0 = torch.nn.Dropout(0.1)
 
         self.x1 = torch.nn.Linear(768, 512)
@@ -55,11 +55,18 @@ class MZKBert(torch.nn.Module):
         return next(self.parameters()).device
 
 
-def build_model(model_path=None, pretrained_bert_path=BERT_BASE_NAME):
-    model = MZKBert(pretrained_bert_path=pretrained_bert_path)
-
+def build_model(tokenizer, model_path=None, pretrained_bert_path=helper.BERT_BASE_NAME, model_config=helper.ModelConfig()):
     if model_path is not None:
-        model.load_state_dict(torch.load(model_path))
-        print(f"Model loaded from '{model_path}'.")
+        config = AutoConfig.from_pretrained(helper.BERT_BASE_NAME)
+        bert = BertModel(config)
+        bert.resize_token_embeddings(len(tokenizer))
 
+        model = MZKBert(bert, model_config)
+        model.load_state_dict(torch.load(model_path))
+
+        return model
+
+    bert = BertModel.from_pretrained(pretrained_bert_path)
+    bert.resize_token_embeddings(len(tokenizer))
+    model = MZKBert(bert, model_config)
     return model
