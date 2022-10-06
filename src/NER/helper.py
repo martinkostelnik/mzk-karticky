@@ -57,6 +57,9 @@ class ModelConfig:
         for key, val in data.items():
             setattr(config, key, val)
 
+        # Change data type of ids2labels keys to int
+        config.ids2labels = {int(v): k for v, k in config.ids2labels.items()}
+
         return config
 
     def get_format(self, format: str):

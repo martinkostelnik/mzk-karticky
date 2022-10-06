@@ -1,6 +1,6 @@
 import torch
 
-from helper import calculate_acc, IDS2LABELS
+from helper import calculate_acc
 
 from sklearn.metrics import classification_report
 
@@ -40,11 +40,11 @@ class Tester:
             loss, logits = self.step(batch)
 
             total_loss += loss
-            acc, l, p = calculate_acc(batch["labels"], logits)
+            acc, l, p = calculate_acc(batch["labels"], logits, self.model.num_labels)
 
             total_acc += acc
-            truth.extend([IDS2LABELS[id.item()] for id in l])
-            prediction.extend([IDS2LABELS[id.item()] for id in p])
+            truth.extend([self.model.config.ids2labels[id.item()] for id in l])
+            prediction.extend([self.model.config.ids2labels[id.item()] for id in p])
 
             total_steps += 1
 

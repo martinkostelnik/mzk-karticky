@@ -34,3 +34,4 @@ data/tokenizer/
 test-inference/
 test-training-output/
 test-training.sh
+test-testing.sh
