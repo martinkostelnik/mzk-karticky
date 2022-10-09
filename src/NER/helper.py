@@ -8,7 +8,8 @@ from sklearn.metrics import accuracy_score
 
 from transformers import BertTokenizerFast
 
-
+JOKER = chr(65533)
+LINE_SEPARATOR = "[LF]"
 BERT_BASE_NAME = "bert-base-multilingual-uncased"
 
 
@@ -107,10 +108,49 @@ def calculate_confidence(logits):
 def build_tokenizer(path: str, model_config: ModelConfig=ModelConfig()):
     if path == BERT_BASE_NAME:
         tokenizer = BertTokenizerFast.from_pretrained(BERT_BASE_NAME)
+        tokenizer.add_special_tokens({"additional_special_tokens": [JOKER]})
 
         if model_config.sep:
-            tokenizer.add_special_tokens({"additional_special_tokens": ["[LF]"]})
+            tokenizer.add_special_tokens({"additional_special_tokens": [LINE_SEPARATOR]})
             
         return tokenizer
 
     return BertTokenizerFast.from_pretrained(path)
+
+
+def offsets_to_io(text: str, alignments):
+    # TODO: This should be modular, based on model config. Do it in dataset.py maybe?
+    text_c = text.replace("\n", f" {LINE_SEPARATOR} ")
+
+    tokens = text_c[:alignments[0].start].split()
+    labels = ["O"] * len(tokens)
+
+    for i, alignment in enumerate(alignments):
+        tokens += text_c[alignment.start:alignment.end].split()
+        labels += [alignment.label] * (len(tokens) - len(labels))
+
+        try:
+            next_alignment = alignments[i + 1]
+            tokens += text_c[alignment.end:next_alignment.start].split()
+        except IndexError:
+            tokens += text_c[alignment.end:].split()
+
+        labels += ["O"] * (len(tokens) - len(labels))
+
+    return tokens, labels
+
+
+def offsets_to_iob(text: str, alignments):
+    tokens, labels = offsets_to_io(text, alignments)
+
+    current = ""
+    for i, (token, label) in enumerate(zip(tokens, labels)):
+        if label == "O":
+            current = "O"
+            continue
+
+        tmp = label
+        labels[i] = f"B-{label}" if label != current else f"I-{label}"
+        current = tmp
+
+    return tokens, labels
