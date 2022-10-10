@@ -47,28 +47,24 @@ def get_ocr(file_path: str) -> str:
         return f.read()
 
 
-def logits_to_preds(model_config, tokenizer, logits, ids, offset_mapping, ocr) -> list:
+def logits_to_preds(model_config, tokenizer, logits, ids, offset_mapping) -> list:
     active_logits = logits.view(-1, model_config.num_labels)
     flattened_predictions = torch.argmax(active_logits, axis=1)
-
+    
     wordpieces = tokenizer.convert_ids_to_tokens(ids.squeeze().tolist())
     wordpieces_preds = [model_config.ids2labels[pred] for pred in flattened_predictions.cpu().numpy()]
 
     result = []
 
-    i = 0
     for tok, pred, mapping in zip(wordpieces, wordpieces_preds, offset_mapping.squeeze().tolist()):
-        if mapping[0] == 0 and mapping[1] != 0 and tok != "[SEP]":
+        if mapping[0] == 0 and mapping[1] != 0 and tok != helper.LINE_SEPARATOR:
             result.append(pred)
-            # print(pred, tok, ocr.split()[i])
-            i += 1
 
     return result
 
 
 def infer(ocr: str, tokenizer, model, filename) -> list:
-    words = ocr.replace("\n", " [SEP] ").split()
-    asdf = len([word for word in words if word == "[SEP]"])
+    words = ocr.replace("\n", f" {helper.LINE_SEPARATOR} ").split() if model.config.sep else ocr.split()
 
     encoding = tokenizer(words,
                          padding="max_length",
@@ -86,14 +82,20 @@ def infer(ocr: str, tokenizer, model, filename) -> list:
     with torch.no_grad():
         logits = model(ids, attention_mask=mask)[1][0]
 
-    preds = logits_to_preds(model.config, tokenizer, logits, ids, encoding["offset_mapping"], ocr)
+    preds = logits_to_preds(model.config, tokenizer, logits, ids, encoding["offset_mapping"])
 
     confidence = helper.calculate_confidence(logits)[1:len(preds) + 1].tolist()
+
+    if sum(encoding["attention_mask"].squeeze().tolist()) != 256:
+        assert len(ocr.split()) == len(preds), f"{filename}"    
+        assert len(ocr.split()) == len(confidence)
+    else:
+        print(f"File {filename} is being truncated due to maximum bert input length.")
 
     return list(zip(ocr.split(), preds, confidence))
 
 
-def find_offsets(text: str, data: list) -> list:
+def find_offsets(text: str, data: list, format: list) -> list:
     result = []
 
     char_index = 0
@@ -101,7 +103,9 @@ def find_offsets(text: str, data: list) -> list:
 
     while token_index < len(data):
         token, label, conf = data[token_index]
-        label = label if label == "O" else label[2:]
+
+        if format == ["I", "O", "B"]:
+            label = label if label == "O" else label[2:]
 
         text_slice = text[char_index:char_index+len(token)]
 
@@ -172,9 +176,9 @@ def main() -> int:
 
     output_dataset = []
 
+    aggfunc = get_aggfunc(args.aggfunc)
     print(f"Aggregation function: {args.aggfunc}")
     print(f"Confidence threshold: {args.threshold}")
-    aggfunc = get_aggfunc(args.aggfunc)
 
     os.makedirs(args.save_path, exist_ok=True)
     print("Output directory created.")
@@ -187,10 +191,9 @@ def main() -> int:
             line = f"{file_path}"
 
             ocr = get_ocr(file_path)
-            
             result = infer(ocr, tokenizer, model, filename)
 
-            token_offsets = find_offsets(ocr, result)
+            token_offsets = find_offsets(ocr, result, model_config.format)
             alignments = concat_token_offsets(token_offsets)
             alignments = [alignment for alignment in alignments if alignment[0] != "O"]
         

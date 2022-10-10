@@ -9,6 +9,7 @@ from sklearn.metrics import accuracy_score
 from transformers import BertTokenizerFast
 
 JOKER = chr(65533)
+UNICODE_JOKER = chr(772)
 LINE_SEPARATOR = "[LF]"
 BERT_BASE_NAME = "bert-base-multilingual-uncased"
 
@@ -108,7 +109,7 @@ def calculate_confidence(logits):
 def build_tokenizer(path: str, model_config: ModelConfig=ModelConfig()):
     if path == BERT_BASE_NAME:
         tokenizer = BertTokenizerFast.from_pretrained(BERT_BASE_NAME)
-        tokenizer.add_special_tokens({"additional_special_tokens": [JOKER]})
+        tokenizer.add_special_tokens({"additional_special_tokens": [JOKER, UNICODE_JOKER]})
 
         if model_config.sep:
             tokenizer.add_special_tokens({"additional_special_tokens": [LINE_SEPARATOR]})
