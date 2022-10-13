@@ -37,3 +37,4 @@ test-training.sh
 test-testing.sh
 test-inference.sh
 test-inference-output/
+src/NER/charset.py

@@ -70,19 +70,10 @@ class AlignmentDataset(torch.utils.data.Dataset):
                     if len(annotation.alignments) >= 4 and set(["Author", "ID", "Title"]).issubset(set([alignment.label for alignment in annotation.alignments])):
                         self.data.append(annotation)
 
-    def load_ocr(self, path):
-        if self._txn is not None:
-            text = self._txn.get(path.encode()).decode()
-
-        else:
-            with open(os.path.join(self.ocr_path, path), 'r') as f:
-                text = f.read()
-
-        return text
-
     def parse_annotation(self, line):
         file_path, *alignments = line.split("\t")
-        return Annotation(file_path, self.load_ocr(file_path), self.parse_alignments(alignments))
+        path =  file_path if self._txn else os.path.join(self.ocr_path, file_path)
+        return Annotation(file_path, helper.load_ocr(path=path, txn=self._txn), self.parse_alignments(alignments))
 
     def parse_alignments(self, alignments):
         result = []

@@ -9,9 +9,88 @@ from sklearn.metrics import accuracy_score
 from transformers import BertTokenizerFast
 
 JOKER = chr(65533)
-UNICODE_JOKER = chr(772)
 LINE_SEPARATOR = "[LF]"
 BERT_BASE_NAME = "bert-base-multilingual-uncased"
+
+UNKNOWN_CHARS = {
+        "—": "-",
+        "ϵ": JOKER,
+        "℥": JOKER,
+        "‘": JOKER,
+        "’": JOKER,
+        "`": JOKER,
+        "“": '"',
+        "☞": JOKER,
+        "☜": JOKER,
+        "˛": ".",
+        "⁂": JOKER,
+        "ꝛ": JOKER,
+        "Ꙃ": "z",
+        "Ꙁ": "z",
+        "Ꙋ": JOKER,
+        "Ѡ": JOKER,
+        "Ꙗ": JOKER,
+        "Ѥ": JOKER,
+        "Ѭ": JOKER,
+        "Ѩ": JOKER,
+        "Ѯ": JOKER,
+        "Ѱ": JOKER,
+        "Ѵ": "v",
+        "Ҁ": "c",
+        "ꙃ": "z",
+        "ꙁ": "z",
+        "ꙋ": JOKER,
+        "ѡ": "w",
+        "ꙗ": JOKER,
+        "ѥ": JOKER,
+        "ѭ": JOKER,
+        "ѩ": JOKER,
+        "ѯ": JOKER,
+        "ѱ": JOKER,
+        "ѵ": "v",
+        "ҁ": "c",
+        "Ӕ": JOKER,
+        "ӕ": JOKER,
+        "Ϲ": "c",
+        "ϲ": "c",
+        "ϳ": "j",
+        "ϝ": "f",
+        "Ⱥ": "a",
+        "ⱥ": "a",
+        "Ɇ": "e",
+        "ɇ": "e",
+        "ᵱ": "p",
+        "ꝓ": "p",
+        "ꝑ": "p",
+        "ꝙ": "q",
+        "ꝗ": "q",
+        "ꝟ": "v",
+}
+
+TRUNCATED_CHARS = ["ͤ", "̄", "̾", "̃", "̊"]
+
+
+def load_ocr(path: str, txn = None, raw: bool = False) -> str:
+    # Load text
+    if txn is not None:
+        text = txn.get(path.encode()).decode()
+    else:
+        with open(path, 'r') as f:
+            text = f.read()
+
+    # Replace unknown chars so model does not generate [UNK] tokens
+    for to_replace, replace_with in UNKNOWN_CHARS.items():
+        text = text.replace(to_replace, replace_with)
+
+    # Remove special accent characters that get discarded by the tokenizer
+    for to_remove in TRUNCATED_CHARS:
+        text = text.replace(to_remove, "")
+
+    return text
+
+
+def add_line_separator_token(text: str) -> str:
+    return text.replace("\n", f" {LINE_SEPARATOR} ")
 
 
 class ModelConfig:
@@ -109,7 +188,7 @@ def calculate_confidence(logits):
 def build_tokenizer(path: str, model_config: ModelConfig=ModelConfig()):
     if path == BERT_BASE_NAME:
         tokenizer = BertTokenizerFast.from_pretrained(BERT_BASE_NAME)
-        tokenizer.add_special_tokens({"additional_special_tokens": [JOKER, UNICODE_JOKER]})
+        tokenizer.add_special_tokens({"additional_special_tokens": [JOKER]})
 
         if model_config.sep:
             tokenizer.add_special_tokens({"additional_special_tokens": [LINE_SEPARATOR]})

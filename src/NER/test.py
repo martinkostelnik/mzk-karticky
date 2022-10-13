@@ -2,8 +2,6 @@ import torch
 import argparse
 import typing
 
-from transformers import BertTokenizerFast
-
 import helper
 
 from tester import Tester

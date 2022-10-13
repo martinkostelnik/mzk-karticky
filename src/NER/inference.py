@@ -8,6 +8,9 @@ import helper
 
 from model import build_model
 
+from tokenizers import normalizers
+from tokenizers.normalizers import NFD, StripAccents, Lowercase
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
@@ -42,29 +45,8 @@ def get_aggfunc(func_name: str) -> typing.Callable:
         return np.median
 
 
-def get_ocr(file_path: str) -> str:
-    with open(file_path, "r") as f:
-        return f.read()
-
-
-def logits_to_preds(model_config, tokenizer, logits, ids, offset_mapping) -> list:
-    active_logits = logits.view(-1, model_config.num_labels)
-    flattened_predictions = torch.argmax(active_logits, axis=1)
-    
-    wordpieces = tokenizer.convert_ids_to_tokens(ids.squeeze().tolist())
-    wordpieces_preds = [model_config.ids2labels[pred] for pred in flattened_predictions.cpu().numpy()]
-
-    result = []
-
-    for tok, pred, mapping in zip(wordpieces, wordpieces_preds, offset_mapping.squeeze().tolist()):
-        if mapping[0] == 0 and mapping[1] != 0 and tok != helper.LINE_SEPARATOR:
-            result.append(pred)
-
-    return result
-
-
 def infer(ocr: str, tokenizer, model, filename) -> list:
-    words = ocr.replace("\n", f" {helper.LINE_SEPARATOR} ").split() if model.config.sep else ocr.split()
+    words = helper.add_line_separator_token(ocr).split() if model.config.sep else ocr.split()
 
     encoding = tokenizer(words,
                          padding="max_length",
@@ -75,24 +57,45 @@ def infer(ocr: str, tokenizer, model, filename) -> list:
                          return_tensors="pt")
 
     device = model.get_device()
-
     ids = encoding["input_ids"].to(device)
     mask = encoding["attention_mask"].to(device)
 
     with torch.no_grad():
         logits = model(ids, attention_mask=mask)[1][0]
 
-    preds = logits_to_preds(model.config, tokenizer, logits, ids, encoding["offset_mapping"])
-
+    tokens, preds = logits_to_tokens_preds(model.config, tokenizer, logits, ids, encoding["offset_mapping"])
     confidence = helper.calculate_confidence(logits)[1:len(preds) + 1].tolist()
 
     if sum(encoding["attention_mask"].squeeze().tolist()) != 256:
-        assert len(ocr.split()) == len(preds), f"{filename}"    
-        assert len(ocr.split()) == len(confidence)
+        assert len(tokens) == len(preds), f"{filename}"    
+        assert len(tokens) == len(confidence), f"{filename}"
     else:
         print(f"File {filename} is being truncated due to maximum bert input length.")
 
-    return list(zip(ocr.split(), preds, confidence))
+    return list(zip(tokens, preds, confidence))
+
+
+def logits_to_tokens_preds(model_config, tokenizer, logits, ids, offset_mapping):
+    active_logits = logits.view(-1, model_config.num_labels)
+    flattened_predictions = torch.argmax(active_logits, axis=1)
+
+    wordpieces = tokenizer.convert_ids_to_tokens(ids.squeeze().tolist())
+    wordpieces_preds = [model_config.ids2labels[pred] for pred in flattened_predictions.cpu().numpy()]
+
+    tokens = []
+    preds = []
+
+    for tok, pred, mapping in zip(wordpieces, wordpieces_preds, offset_mapping.squeeze().tolist()):
+        if tok == helper.LINE_SEPARATOR or mapping[1] == 0:
+            continue
+
+        if mapping[0] == 0 and mapping[1] != 0:
+            tokens.append(tok)
+            preds.append(pred)
+        else:
+            tokens[-1] += tok[2:] if tok.startswith("##") else tok
+
+    return tokens, preds
 
 
 def find_offsets(text: str, data: list, format: list) -> list:
@@ -101,13 +104,18 @@ def find_offsets(text: str, data: list, format: list) -> list:
     char_index = 0
     token_index = 0
 
+    # We have to normalize the text so we are able to find tokens in it
+    # as tokenizers does normalization as well
+    normalizer = normalizers.Sequence([NFD(), StripAccents(), Lowercase()])
+    text_normalized = normalizer.normalize_str(text)
+
     while token_index < len(data):
         token, label, conf = data[token_index]
 
         if format == ["I", "O", "B"]:
             label = label if label == "O" else label[2:]
 
-        text_slice = text[char_index:char_index+len(token)]
+        text_slice = text_normalized[char_index:char_index+len(token)]
 
         if text_slice == token:
             result.append((token, label, char_index, char_index + len(token), conf))
@@ -165,7 +173,7 @@ def main() -> int:
 
     model_config = helper.ModelConfig.load(args.config_path)
     print("Model config loaded.")
-
+    
     tokenizer = helper.build_tokenizer(args.tokenizer_path, model_config)
     print("Tokenizer loaded.")
 
@@ -190,11 +198,18 @@ def main() -> int:
 
             line = f"{file_path}"
 
-            ocr = get_ocr(file_path)
+            ocr = helper.load_ocr(file_path)
+
+            # Get tokens, predictions and confidences
             result = infer(ocr, tokenizer, model, filename)
 
+            # Get offsets of each token as [(token, label, start, end, confidence)]
             token_offsets = find_offsets(ocr, result, model_config.format)
+
+            # Concat offsets of the same label as [(label, start, end, [confidences])]
             alignments = concat_token_offsets(token_offsets)
+
+            # Filter out empty label
             alignments = [alignment for alignment in alignments if alignment[0] != "O"]
         
             # alignments = aggregate_confidence(alignments, aggfunc)
