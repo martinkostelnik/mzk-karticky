@@ -104,12 +104,14 @@ class ModelConfig:
         max_len: int = 256,
         sep: bool = True,
         sep_loss: bool = False,
+        must_align: list = [],
+        min_aligned: int = 1,
     ):
         self.labels = self.get_labels(labels)
         self.format = self.get_format(format)
-        self.num_labels = len(self.labels) * len(self.format) + 1
+        self.num_labels = len(self.labels) * len([tag for tag in self.format if tag != "O"]) + 1
 
-        self.labels2ids = {f"{c}-{label}": i*len(self.format) + j + 1 for i, label in enumerate(self.labels) for j, c in enumerate(self.format)}
+        self.labels2ids = self.get_labels2ids(format)
         self.labels2ids["O"] = 0
         self.ids2labels = {v: k for k, v in self.labels2ids.items()}
 
@@ -117,6 +119,18 @@ class ModelConfig:
 
         self.sep = sep
         self.sep_loss = sep_loss
+
+        self.must_align = must_align
+        self.min_aligned = min_aligned
+
+        if self.min_aligned > len(self.labels):
+            raise ValueError("The value of min_aligned must be lower than the number of labels.")
+
+        if self.min_aligned < 1:
+            raise ValueError("The value of min_aligned must be higher than zero.")
+
+        if not set(self.must_align).issubset(set(self.labels)):
+            raise ValueError("The values of must_align must contain correct label names")
 
     def save(self, path: str):
         path = os.path.join(path, self.FILENAME)
@@ -153,18 +167,30 @@ class ModelConfig:
         if label_str == "subset":
             return ["Author", "Title", "ID", "Pages", "Volume", "Publisher", "Edition", "Date"]
 
-    def __str__(self):
-        output = f"Labels used: {self.labels}\n"
-        output += f"Number of labels: {self.num_labels}\n"
-        output += f"Format used: {self.format}\n"
+    def get_labels2ids(self, format_str: str):
+        if format_str == "iob":
+            no_o = ["B", "I"]
+            return {f"{c}-{label}": i * len(no_o) + j + 1 for i, label in enumerate(self.labels) for j, c in enumerate(no_o)}
+        
+        if format_str == "io":
+            return {label: i + 1 for i, label in enumerate(self.labels)}
 
-        output += f"labels2ids: {self.labels2ids}\n"
-        output += f"ids2labels: {self.ids2labels}\n"
+    def __str__(self):
+        output = f"Labels used: {self.labels}\n\n"
+
+        output += f"Number of labels: {self.num_labels}\n"
+        output += f"Format used: {self.format}\n\n"
+
+        output += f"labels2ids: {self.labels2ids}\n\n"
+        output += f"ids2labels: {self.ids2labels}\n\n"
 
         output += f"Max seq length: {self.max_sequence_len}\n"
 
         output += f"Separating: {self.sep}\n"
-        output += f"Loss on sep: {self.sep_loss}\n"
+        output += f"Loss on sep: {self.sep_loss}\n\n"
+
+        output += f"Min aligned fields: {self.min_aligned}\n"
+        output += f"Must aligned fields: {self.must_align}"
         
         return output
 
@@ -198,9 +224,16 @@ def build_tokenizer(path: str, model_config: ModelConfig=ModelConfig()):
     return BertTokenizerFast.from_pretrained(path)
 
 
-def offsets_to_io(text: str, alignments):
-    # TODO: This should be modular, based on model config. Do it in dataset.py maybe?
-    text_c = text.replace("\n", f" {LINE_SEPARATOR} ")
+def offsets_to_io(text: str, alignments, sep: bool = False):
+    text_c = text
+
+    # We have to replace newlines with something that cannot be present in the text.
+    # The truncated chars are never present as they are removed in preprocessing.
+    # We do this so the text is not split on newlines in case of line separations
+    # with a special token.
+    if sep:
+        newline_joker = TRUNCATED_CHARS[0]
+        text_c = text.replace("\n", newline_joker)
 
     tokens = text_c[:alignments[0].start].split()
     labels = ["O"] * len(tokens)
@@ -217,11 +250,29 @@ def offsets_to_io(text: str, alignments):
 
         labels += ["O"] * (len(tokens) - len(labels))
 
+    # IF SEP
+    # We have to do a backward correction: replace all newline jokers with newlines and split all tokens again
+    if sep:
+        out_tokens = []
+        out_labels = []
+
+        for token, label in zip(tokens, labels):
+            if newline_joker not in token:
+                out_tokens.append(token)
+                out_labels.append(label)
+                continue
+
+            split_token = token.replace(newline_joker, f" {LINE_SEPARATOR} ").split()
+            out_tokens.extend(split_token)
+            out_labels.extend([label] * len(split_token))
+
+        return out_tokens, out_labels
+
     return tokens, labels
 
 
-def offsets_to_iob(text: str, alignments):
-    tokens, labels = offsets_to_io(text, alignments)
+def offsets_to_iob(text: str, alignments, sep: bool = False):
+    tokens, labels = offsets_to_io(text, alignments, sep)
 
     current = ""
     for i, (token, label) in enumerate(zip(tokens, labels)):

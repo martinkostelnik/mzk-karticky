@@ -26,6 +26,13 @@ class Tester:
 
         return loss, logits[0]
 
+    def remove_format(self, labels):
+        if self.model.config.format == ["I", "O", "B"]:
+            return [label if label == "O" else label[2:] for label in labels]
+
+        if self.model.config.format == ["I", "O"]:
+            return labels
+
     def test(self, data_loader):
         self.model.eval()
 
@@ -51,8 +58,9 @@ class Tester:
         total_loss /= total_steps
         total_acc /= total_steps
 
-        truth = [label if label == "O" else label[2:] for label in truth]
-        prediction = [label if label == "O" else label[2:] for label in prediction]
+        # We don't really care about the tagging format when concerning total accuracy.
+        truth = self.remove_format(truth)
+        prediction = self.remove_format(prediction)
 
         print(f"Test loss: {total_loss:.6f}")
         print(f"Test acc: {total_acc:.6f}\n")

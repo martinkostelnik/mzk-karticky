@@ -65,14 +65,12 @@ class AlignmentDataset(torch.utils.data.Dataset):
                 if len(line) > 0:
                     annotation = self.parse_annotation(line)
                     
-                    # TODO: Make it more modular, let user select how many alignments an annotation must have
-                    # and what must be the subset
-                    if len(annotation.alignments) >= 4 and set(["Author", "ID", "Title"]).issubset(set([alignment.label for alignment in annotation.alignments])):
+                    if len(annotation.alignments) >= self.model_config.min_aligned and set(self.model_config.must_align).issubset(set([alignment.label for alignment in annotation.alignments])):
                         self.data.append(annotation)
 
     def parse_annotation(self, line):
         file_path, *alignments = line.split("\t")
-        path =  file_path if self._txn else os.path.join(self.ocr_path, file_path)
+        path = file_path if self._txn else os.path.join(self.ocr_path, file_path)
         return Annotation(file_path, helper.load_ocr(path=path, txn=self._txn), self.parse_alignments(alignments))
 
     def parse_alignments(self, alignments):
@@ -110,7 +108,7 @@ class AlignmentDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         annotation = self.data[index]
 
-        tokens, labels = self.formatting_function(annotation.text, annotation.alignments)
+        tokens, labels = self.formatting_function(annotation.text, annotation.alignments, self.model_config.sep)
 
         encoding = self.tokenizer(tokens,
                                   padding="max_length",

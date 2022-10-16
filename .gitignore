@@ -38,3 +38,5 @@ test-testing.sh
 test-inference.sh
 test-inference-output/
 src/NER/charset.py
+data/alignments.long
+data/token_lengths.txt

@@ -22,24 +22,30 @@ def parse_arguments():
 
     parser = argparse.ArgumentParser()
 
+    # Trainer settings
     parser.add_argument("--train-bert", action="store_true", default=False, help="Whether to train BERT as well. Note that this extremely increases training time.")
     parser.add_argument("--epochs", type=int, default=1, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=0.00003, help="Learning rate")
     parser.add_argument("--grad", type=int, default=10, help="Max grad norm")
 
+    # Dataset settings
     parser.add_argument("--sep", action="store_true", default=True, help="Whether to separate lines with [LF] token.")
     parser.add_argument("--sep-loss", action="store_true", default=False, help="Whether to calculate loss on the [LF] token.")
     parser.add_argument("--labels", type=str, default="all", help="'all' or 'subset'")
     parser.add_argument("--format", type=str, default="iob", help="'iob' or 'io'")
-    parser.add_argument("--max_len", type=int, default=256, help="Max length of token sequence as bert input")
+    parser.add_argument("--max-len", type=int, default=256, help="Max length of token sequence as bert input")
+    parser.add_argument("--min-aligned", type=int, default=4, help="Minimum number of aligned fields in dataset sample.")
+    parser.add_argument("--must-align", nargs="+", help="Which labels must be aligned in dataset sample.")
 
+    # Module paths
     parser.add_argument("--model-path", help="Path to a model checkpoint.", default=None)
     parser.add_argument("--bert-path", default=helper.BERT_BASE_NAME, help="Path to a pretrained BERT model. This is NOT used if --model-path is specified.")
     parser.add_argument("--tokenizer-path", default=helper.BERT_BASE_NAME, help="Path to a tokenizer.")
     parser.add_argument("--save-path", help="Path to a directory where checkpoints are stored.")
     parser.add_argument("--save-tokenizer", help="Save tokenizer with model checkpoints", action="store_true", default=False)
 
+    # Data paths
     parser.add_argument("--ocr-path", help="Path to either (1) root dir with OCR files or (2) LMDB with texts from OCR")
     parser.add_argument("--train-path", help="Path to a text file with training data.")
     parser.add_argument("--val-path", help="Path to a text file with validation data.")
@@ -57,7 +63,9 @@ if __name__ == "__main__":
         format=args.format,
         max_len=args.max_len,
         sep=args.sep,
-        sep_loss=args.sep_loss
+        sep_loss=args.sep_loss,
+        must_align=args.must_align,
+        min_aligned=args.min_aligned,
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -66,7 +74,7 @@ if __name__ == "__main__":
     tokenizer = helper.build_tokenizer(args.tokenizer_path, model_config)
     print("Tokenizer loaded.")
 
-    model = model.build_model(tokenizer=tokenizer, model_path=args.model_path, pretrained_bert_path=args.bert_path)
+    model = model.build_model(tokenizer=tokenizer, model_path=args.model_path, pretrained_bert_path=args.bert_path, model_config=model_config)
     model = model.to(device)
     print("Model loaded.")
 
