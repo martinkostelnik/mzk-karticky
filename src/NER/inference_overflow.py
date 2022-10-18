@@ -6,8 +6,6 @@ import os
 import pandas as pd
 from dataset import AlignmentDataset
 
-from tokenizers import normalizers
-from tokenizers.normalizers import NFD, StripAccents, Lowercase
 
 def parse_arguments():
     parser = argparse.ArgumentParser()

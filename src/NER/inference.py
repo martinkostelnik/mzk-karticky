@@ -21,6 +21,7 @@ def parse_arguments():
     parser.add_argument("--tokenizer-path", help="Path to a tokenizer.", required=True)
     parser.add_argument("--save-path", help="Path to a output directory.", required=True)
     
+    parser.add_argument("--print-conf", help="Add confidences to output files", action="store_true", default=False)
     parser.add_argument("--threshold", default=0.0, type=float, help="Threshold for selecting field with enough model confidence.")
     parser.add_argument("--aggfunc", default="prod", type=str, help="Confidence aggregation function.")
 
@@ -52,8 +53,7 @@ def infer(ocr: str, tokenizer, model, filename) -> list:
                          padding="max_length",
                          is_split_into_words=True,
                          return_offsets_mapping=True,
-                         truncation=True,
-                         max_length=model.config.max_sequence_len,
+                         max_length=512,
                          return_tensors="pt")
 
     device = model.get_device()
@@ -63,19 +63,20 @@ def infer(ocr: str, tokenizer, model, filename) -> list:
     with torch.no_grad():
         logits = model(ids, attention_mask=mask)[1][0]
 
-    tokens, preds = logits_to_tokens_preds(model.config, tokenizer, logits, ids, encoding["offset_mapping"])
-    confidence = helper.calculate_confidence(logits)[1:len(preds) + 1].tolist()
+    confidence = helper.calculate_confidence(logits).tolist()
+    tokens, preds, confidence = convert_logits(model.config, tokenizer, logits, ids, confidence, encoding["offset_mapping"])
 
-    if sum(encoding["attention_mask"].squeeze().tolist()) != 256:
-        assert len(tokens) == len(preds), f"{filename}"    
-        assert len(tokens) == len(confidence), f"{filename}"
+    if sum(encoding["attention_mask"].squeeze().tolist()) != 512:
+        assert len(tokens) == len(preds), f"{filename}"
+        assert len(tokens) == len(confidence), f"{filename}\t{len(tokens)}\t{len(confidence)}"
     else:
         print(f"File {filename} is being truncated due to maximum bert input length.")
+
 
     return list(zip(tokens, preds, confidence))
 
 
-def logits_to_tokens_preds(model_config, tokenizer, logits, ids, offset_mapping):
+def convert_logits(model_config, tokenizer, logits, ids, confidence, offset_mapping):
     active_logits = logits.view(-1, model_config.num_labels)
     flattened_predictions = torch.argmax(active_logits, axis=1)
 
@@ -84,18 +85,31 @@ def logits_to_tokens_preds(model_config, tokenizer, logits, ids, offset_mapping)
 
     tokens = []
     preds = []
+    confidences = [] # list of lists
+    current_confidence = [] # list - confidences of subtokens of current tokens
 
-    for tok, pred, mapping in zip(wordpieces, wordpieces_preds, offset_mapping.squeeze().tolist()):
+    for tok, pred, conf, mapping in zip(wordpieces, wordpieces_preds, confidence, offset_mapping.squeeze().tolist()):
         if tok == helper.LINE_SEPARATOR or mapping[1] == 0:
             continue
 
         if mapping[0] == 0 and mapping[1] != 0:
+            if not current_confidence: # Current confidence is empty, we are starting a new token
+                current_confidence.append(conf)
+            else: # Current confidence is not empty, we are finishing a token
+                confidences.append(current_confidence)
+                current_confidence = []
+                current_confidence.append(conf)
+
             tokens.append(tok)
             preds.append(pred)
         else:
             tokens[-1] += tok[2:] if tok.startswith("##") else tok
+            current_confidence.append(conf)
 
-    return tokens, preds
+    if current_confidence:
+        confidences.append(current_confidence)
+
+    return tokens, preds, confidences
 
 
 def find_offsets(text: str, data: list, format: list) -> list:
@@ -134,11 +148,11 @@ def concat_token_offsets(offsets: list) -> list:
 
     for _, label, from_, to, confidence in offsets:
         if label != current_label:
-            result.append((label, from_, to, [confidence]))
+            result.append((label, from_, to, confidence))
             current_label = label
         else:
             _, current_from, _, confidences = result[-1]
-            confidences.append(confidence)
+            confidences.extend(confidence)
             result[-1] = (label, current_from, to, confidences)
 
     return result
@@ -148,16 +162,18 @@ def aggregate_confidence(alignments: list, aggfunc: typing.Callable) -> list:
     result = []
 
     for label, from_, to, confidences in alignments:
-        result.append((label, from_, to, aggfunc(confidences).item()))
+        result.append((label, from_, to, aggfunc(confidences).item(), confidences))
 
     return result
 
 
-def save_result(path: str, result: list, ocr: str) -> None:
+def save_result(path: str, result: list, ocr: str, print_conf: bool) -> None:
     with open(path, "w") as f:
-        for label, from_, to, _ in result:
-            print(f"{label}\t{repr(ocr[from_:to])}\t{from_}\t{to}", file=f)
-
+        for label, from_, to, confidence, confidences in result:
+            if print_conf:
+                print(f"{label}\t{repr(ocr[from_:to])}\t{from_}\t{to}\t{confidence}\t{confidences}", file=f)
+            else:
+                print(f"{label}\t{repr(ocr[from_:to])}\t{from_}\t{to}", file=f)
 
 def save_output_dataset(data: list, path: str) -> None:
     with open(os.path.join(path, "dataset.all"), "w") as f:
@@ -212,15 +228,15 @@ def main() -> int:
             # Filter out empty label
             alignments = [alignment for alignment in alignments if alignment[0] != "O"]
         
-            # alignments = aggregate_confidence(alignments, aggfunc)
-            # alignments = [alignment for alignment in alignments if alignment[3] >= args.threshold]
+            alignments = aggregate_confidence(alignments, aggfunc)
+            alignments = [alignment for alignment in alignments if alignment[3] >= args.threshold]
 
-            for label, from_, to, _ in alignments:
+            for label, from_, to, _, _ in alignments:
                 line += f"\t{label} {from_} {to}"
 
             output_dataset.append(line)
 
-            save_result(os.path.join(args.save_path, filename), alignments, ocr)
+            save_result(os.path.join(args.save_path, filename), alignments, ocr, args.print_conf)
 
     print("Inference done.")
 

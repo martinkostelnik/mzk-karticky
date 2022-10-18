@@ -19,4 +19,5 @@ python -u $SCRIPTS_DIR/inference.py \
     --data-path=$DATA_DIR/page-txts \
     --save-path=$OUT_DIR \
     --aggfunc prod \
-    --threshold 0.0
+    --threshold 0.0 \
+    --print-conf
