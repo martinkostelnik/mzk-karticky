@@ -34,11 +34,15 @@ class AlignmentDataset(torch.utils.data.Dataset):
         data_path: str,
         ocr_path: str,
         tokenizer,
-        model_config = helper.ModelConfig()
+        model_config = helper.ModelConfig(),
+        min_aligned: int = 1,
+        must_align: list = []
     ):
         self.data: typing.List[Annotation] = []
         self.tokenizer = tokenizer
         self.model_config = model_config
+        self.min_aligned = min_aligned
+        self.must_align = must_align
 
         self.data_path = data_path
         self.ocr_path = ocr_path
@@ -65,7 +69,7 @@ class AlignmentDataset(torch.utils.data.Dataset):
                 if len(line) > 0:
                     annotation = self.parse_annotation(line)
                     
-                    if len(annotation.alignments) >= self.model_config.min_aligned and set(self.model_config.must_align).issubset(set([alignment.label for alignment in annotation.alignments])):
+                    if len(annotation.alignments) >= self.min_aligned and set(self.must_align).issubset(set([alignment.label for alignment in annotation.alignments])):
                         self.data.append(annotation)
 
     def parse_annotation(self, line):
@@ -136,8 +140,8 @@ class AlignmentDataset(torch.utils.data.Dataset):
         return len(self.data)
 
 
-def load_dataset(data_path, ocr_path, batch_size, tokenizer, model_config=helper.ModelConfig(), num_workers=0):
-    dataset = AlignmentDataset(data_path=data_path, ocr_path=ocr_path, tokenizer=tokenizer, model_config=model_config)
+def load_dataset(data_path, ocr_path, batch_size, tokenizer, model_config=helper.ModelConfig(), num_workers=0, min_aligned=1, must_align=[]):
+    dataset = AlignmentDataset(data_path=data_path, ocr_path=ocr_path, tokenizer=tokenizer, model_config=model_config, min_aligned=min_aligned, must_align=must_align)
     data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     return data_loader
 

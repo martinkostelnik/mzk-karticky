@@ -29,12 +29,14 @@ def parse_arguments():
     parser.add_argument("--lr", type=float, default=0.00003, help="Learning rate")
     parser.add_argument("--grad", type=int, default=10, help="Max grad norm")
 
-    # Dataset settings
+    # Dataset settings (model specific)
     parser.add_argument("--sep", action="store_true", default=True, help="Whether to separate lines with [LF] token.")
     parser.add_argument("--sep-loss", action="store_true", default=False, help="Whether to calculate loss on the [LF] token.")
     parser.add_argument("--labels", type=str, default="all", help="'all' or 'subset'")
     parser.add_argument("--format", type=str, default="iob", help="'iob' or 'io'")
     parser.add_argument("--max-len", type=int, default=256, help="Max length of token sequence as bert input")
+
+    # Dataset specific
     parser.add_argument("--min-aligned", type=int, default=4, help="Minimum number of aligned fields in dataset sample.")
     parser.add_argument("--must-align", nargs="+", help="Which labels must be aligned in dataset sample.")
 
@@ -63,9 +65,7 @@ if __name__ == "__main__":
         format=args.format,
         max_len=args.max_len,
         sep=args.sep,
-        sep_loss=args.sep_loss,
-        must_align=args.must_align,
-        min_aligned=args.min_aligned,
+        sep_loss=args.sep_loss
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     model = model.to(device)
     print("Model loaded.")
 
-    load_data = partial(load_dataset, ocr_path=args.ocr_path, batch_size=args.batch_size, tokenizer=tokenizer, model_config=model_config)
+    load_data = partial(load_dataset, ocr_path=args.ocr_path, batch_size=args.batch_size, tokenizer=tokenizer, model_config=model_config, min_aligned=args.min_aligned, must_align=args.must_align)
 
     train_dataset = load_data(args.train_path)
     val_dataset = load_data(args.val_path)

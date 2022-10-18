@@ -103,9 +103,7 @@ class ModelConfig:
         format: str = "iob",
         max_len: int = 256,
         sep: bool = True,
-        sep_loss: bool = False,
-        must_align: list = [],
-        min_aligned: int = 1,
+        sep_loss: bool = False
     ):
         self.labels = self.get_labels(labels)
         self.format = self.get_format(format)
@@ -119,18 +117,6 @@ class ModelConfig:
 
         self.sep = sep
         self.sep_loss = sep_loss
-
-        self.must_align = must_align
-        self.min_aligned = min_aligned
-
-        if self.min_aligned > len(self.labels):
-            raise ValueError("The value of min_aligned must be lower than the number of labels.")
-
-        if self.min_aligned < 1:
-            raise ValueError("The value of min_aligned must be higher than zero.")
-
-        if not set(self.must_align).issubset(set(self.labels)):
-            raise ValueError("The values of must_align must contain correct label names")
 
     def save(self, path: str):
         path = os.path.join(path, self.FILENAME)
@@ -187,10 +173,7 @@ class ModelConfig:
         output += f"Max seq length: {self.max_sequence_len}\n"
 
         output += f"Separating: {self.sep}\n"
-        output += f"Loss on sep: {self.sep_loss}\n\n"
-
-        output += f"Min aligned fields: {self.min_aligned}\n"
-        output += f"Must aligned fields: {self.must_align}"
+        output += f"Loss on sep: {self.sep_loss}\n"
         
         return output
 
