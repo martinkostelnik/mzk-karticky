@@ -40,3 +40,4 @@ test-inference-output/
 src/NER/charset.py
 data/alignments.long
 data/token_lengths.txt
+scripts/confidence.out
