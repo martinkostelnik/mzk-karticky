@@ -25,5 +25,5 @@ python -u $SCRIPTS_DIR/train.py \
     --min-aligned=4 \
     --must-align Author Title ID \
     --sep \
-    --labels all \
-    --format io
+    --labels subset \
+    --format iob
