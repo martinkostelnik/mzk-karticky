@@ -27,7 +27,7 @@ def parse_arguments():
     parser.add_argument("--epochs", type=int, default=1, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=0.00003, help="Learning rate")
-    parser.add_argument("--grad", type=int, default=10, help="Max grad norm")
+    parser.add_argument("--grad", type=float, default=10.0, help="Max grad norm")
 
     # Dataset settings (model specific)
     parser.add_argument("--sep", action="store_true", default=True, help="Whether to separate lines with [LF] token.")
@@ -38,7 +38,7 @@ def parse_arguments():
 
     # Dataset specific
     parser.add_argument("--min-aligned", type=int, default=4, help="Minimum number of aligned fields in dataset sample.")
-    parser.add_argument("--must-align", nargs="+", help="Which labels must be aligned in dataset sample.")
+    parser.add_argument("--must-align", nargs="+", default=[], help="Which labels must be aligned in dataset sample.")
 
     # Module paths
     parser.add_argument("--model-path", help="Path to a model checkpoint.", default=None)
@@ -82,7 +82,7 @@ if __name__ == "__main__":
 
     train_dataset = load_data(args.train_path)
     val_dataset = load_data(args.val_path)
-    test_dataset = load_data(args.test_path)
+    test_dataset = load_dataset(data_path=args.test_path, ocr_path=args.ocr_path, batch_size=args.batch_size, tokenizer=tokenizer, model_config=model_config)
     print("Datasets loaded and DataLoaders created.")
 
     trainer_settings = {
