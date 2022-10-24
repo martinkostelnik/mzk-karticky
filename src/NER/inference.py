@@ -20,7 +20,9 @@ def parse_arguments():
     parser.add_argument("--model-path", help="Path to a trained model.", required=True)
     parser.add_argument("--tokenizer-path", help="Path to a tokenizer.", required=True)
     parser.add_argument("--save-path", help="Path to a output directory.", required=True)
-    
+
+    parser.add_argument("--save-all", help="Whether to save individual prediction files.", action="store_true", default=False)
+
     parser.add_argument("--print-conf", help="Add confidences to output files", action="store_true", default=False)
     parser.add_argument("--threshold", default=0.0, type=float, help="Threshold for selecting field with enough model confidence.")
     parser.add_argument("--aggfunc", default="prod", type=str, help="Confidence aggregation function.")
@@ -168,12 +170,15 @@ def aggregate_confidence(alignments: list, aggfunc: typing.Callable) -> list:
 
 
 def save_result(path: str, result: list, ocr: str, print_conf: bool) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
     with open(path, "w") as f:
         for label, from_, to, confidence, confidences in result:
             if print_conf:
                 print(f"{label}\t{repr(ocr[from_:to])}\t{from_}\t{to}\t{confidence}\t{confidences}", file=f)
             else:
                 print(f"{label}\t{repr(ocr[from_:to])}\t{from_}\t{to}", file=f)
+
 
 def save_output_dataset(data: list, path: str) -> None:
     with open(os.path.join(path, "dataset.all"), "w") as f:
@@ -210,8 +215,10 @@ def main() -> int:
     print("Inference starting ...")
     for root, _, filenames in os.walk(args.data_path):
         for filename in filenames:
-            file_path = os.path.join(root, filename)
+            if not filename.endswith(".txt"):
+                continue
 
+            file_path = os.path.join(root, filename)
             line = f"{file_path}"
 
             ocr = helper.load_ocr(file_path)
@@ -236,7 +243,8 @@ def main() -> int:
 
             output_dataset.append(line)
 
-            save_result(os.path.join(args.save_path, filename), alignments, ocr, args.print_conf)
+            if args.save_all:
+                save_result(os.path.join(args.save_path, os.path.relpath(root, args.data_path), filename), alignments, ocr, args.print_conf)
 
     print("Inference done.")
 
