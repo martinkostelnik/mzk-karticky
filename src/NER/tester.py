@@ -1,8 +1,8 @@
 import torch
 
 from helper import calculate_acc
-
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, ConfusionMatrixDisplay, confusion_matrix
+import matplotlib.pyplot as plt
 
 
 class Tester:
@@ -65,3 +65,19 @@ class Tester:
         print(f"Test loss: {total_loss:.6f}")
         print(f"Test acc: {total_acc:.6f}\n")
         print(classification_report(truth, prediction, zero_division=0))
+
+        cm = confusion_matrix(y_true=truth, y_pred=prediction, labels=self.model.config.labels + ["O"])
+
+        # false_positives = {l: sum(cm[:, i]) - cm[i, i] for i, l in enumerate(self.model.config.labels + ["O"])} # Columns
+        # false_negatives = {l: sum(cm[i, :], 2) - cm[i, i] for i, l in enumerate(self.model.config.labels + ["O"])} # Rows
+
+        # precision = {l: cm[i, i] / (cm[i, i] + false_positives[l]) for i, l in enumerate(self.model.config.labels + ["O"])}
+        # recall = {l: cm[i, i] / (cm[i, i] + false_negatives[l]) for i, l in enumerate(self.model.config.labels + ["O"])}
+
+        # for (l, p), r in zip(precision.items(), recall.values()):
+        #     print(f"{l}:\tP = {p}\tR = {r}")
+
+        # print(f"Avg precision = {sum(precision.values()) / len(precision.values())}")
+        # print(f"Avg recall = {sum(recall.values()) / len(recall.values())}")
+        ConfusionMatrixDisplay.from_predictions(truth, prediction)
+        plt.savefig("confusion.pdf")
