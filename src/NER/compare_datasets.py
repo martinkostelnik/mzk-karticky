@@ -99,7 +99,7 @@ def main() -> int:
         truth_labels_all.extend(truth_mask)
         inferred_labels_all.extend(inferred_mask)
 
-    print(classification_report(truth_labels_all, inferred_labels_all, zero_division=0))
+    print(classification_report(truth_labels_all, inferred_labels_all, zero_division=0, digits=4))
 
 
 if __name__ == "__main__":
