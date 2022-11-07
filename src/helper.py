@@ -1,10 +1,32 @@
 import re
 from collections import defaultdict
+import collections
+import typing
+import os
 import pandas as pd
 
 
 LABELS = ["Author", "Title", "Original title", "Publisher", "Pages", "Series", "Edition", "References", "ID",
           "ISBN", "ISSN", "Topic", "Subtitle", "Date", "Institute", "Volume"]
+
+LABEL_TRANSLATIONS = {
+    "Author": "Autor",
+    "Title": "Název",
+    "Original title": "Původní název",
+    "Publisher": "Vydavatel",
+    "Pages": "Počet stran",
+    "Series": "Série",
+    "Edition": "Edice",
+    "References": "Reference",
+    "ID": "ID",
+    "ISBN": "IDBN",
+    "ISSN": "ISSN",
+    "Topic": "Téma",
+    "Subtitle": "Podnázev",
+    "Date": "Datum vydání",
+    "Institute": "Institut", 
+    "Volume": "Vydání",
+}
 
 
 class DatabaseRecordPattern:
@@ -72,7 +94,7 @@ def generate_db_records(db_key, text):
         return {"Title": parts["a"], "Subtitle": parts["b"]}
 
     if original_title_pattern.matches(db_key, text):
-        return {"Original title": parts["t"]}
+        return {"Original_title": parts["t"]}
 
     if publisher_pattern.matches(db_key, text):
         return {"Publisher": f"{parts['a']}, {parts['b']}", "Date": parts["c"]}
@@ -161,3 +183,48 @@ def create_mapping(path):
         mapping[row[0].partition(".")[0]] = f"{row[1]}"
 
     return mapping
+
+
+def get_db_dict(path: str) -> typing.Dict[str, typing.Dict[str, str]]:
+    all_data: typing.Dict[str, typing.Dict[str, str]] = collections.defaultdict(dict)
+
+    with open(path, "r") as bib_file:
+        for line in bib_file:
+            try:
+                file_id, field_id, content = parse_line(line)
+            except ValueError:
+                continue
+
+            all_data[file_id][field_id] = content
+
+    return all_data
+
+
+def parse_line(line: str):
+    fields = line.split()
+
+    if len(fields) < 4:
+        raise ValueError("Line too short")
+
+    if not line.startswith("mzk"):
+        raise ValueError("Invalid line")
+
+    card_id = fields[0]
+    fields = fields[1:]
+
+    try:
+        ind_of_L = fields.index('L')
+    except ValueError:
+        try:
+            ind_of_L = fields.index("I")
+        except ValueError:
+            try:
+                ind_of_L = fields.index("S")
+            except ValueError:
+                ind_of_L = fields.index("H")
+
+    entry_type = fields[:ind_of_L]
+    content = ' '.join(fields[ind_of_L + 1:])
+
+    return card_id, entry_type[0], content
+    

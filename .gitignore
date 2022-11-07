@@ -42,3 +42,10 @@ data/alignments.long
 data/token_lengths.txt
 scripts/confidence.out
 scripts/confusion.pdf
+human-readable/
+inference-2022-10-27-e12/
+data/lmdb/
+data/index/
+data/files.test
+data/files.trn
+data/files.val
