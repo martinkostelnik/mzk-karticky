@@ -27,6 +27,8 @@ def main():
     args = parse_arguments()
 
     gb100 = 100000000000
+    n_files = 0
+
     env = lmdb.open(args.lmdb, map_size=gb100)
     with env.begin(write=True) as txn:
         cur = txn.cursor()
@@ -44,6 +46,12 @@ def main():
                     file_id = file_id[1:]
 
                 write(cur, file_id, text)
+                n_files += 1
+
+                if n_files % 1000 == 0:
+                    print(f"{n_files} files added to db.")
+
+    print(f"{n_files} files added to db.")
 
     return 0
 
