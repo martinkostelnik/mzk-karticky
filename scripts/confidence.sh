@@ -10,9 +10,9 @@ source $BASE/venv/bin/activate
 export PATH="$BASE/venv/bin:$PATH"
 
 mkdir -p $OUT_DIR
-for function in mean median
+for function in median
 do
-    for threshold in 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0.92 0.94 0.96 0.98
+    for threshold in 0.75 0.77 0.79 0.8 0.81 0.82 0.83 0.84 0.85 0.86 0.87 0.88 0.89
     do
         python -u $SCRIPTS_DIR/inference.py \
             --model-path=$MODEL_DIR/checkpoint_008.pth \
