@@ -78,6 +78,9 @@ def load_ocr(path: str, txn = None, raw: bool = False) -> str:
         with open(path, 'r') as f:
             text = f.read()
 
+    if raw:
+        return text
+
     # Replace unknown chars so model does not generate [UNK] tokens
     for to_replace, replace_with in UNKNOWN_CHARS.items():
         text = text.replace(to_replace, replace_with)
@@ -86,7 +89,7 @@ def load_ocr(path: str, txn = None, raw: bool = False) -> str:
     for to_remove in TRUNCATED_CHARS:
         text = text.replace(to_remove, "")
 
-    return text
+    return text            
 
 
 def add_line_separator_token(text: str) -> str:
