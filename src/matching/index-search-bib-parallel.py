@@ -6,13 +6,13 @@ import lmdb
 import traceback
 import psutil
 import json
-import random
 
 import numpy as np
 
 import whoosh
 import whoosh.index
 import whoosh.scoring
+import whoosh.qparser
 
 from fuzzysearch import find_near_matches
 from src import helper
@@ -20,7 +20,10 @@ from src.NER.helper import load_ocr
 from src.alignment.align_fuzzysearch import correct_overlaps
 from src.alignment.timeout import timeout, TimeoutError
 
+from multiprocessing import Pool
+from functools import partial
 
+        
 def parse_arguments():
     parser = argparse.ArgumentParser()
 
@@ -45,8 +48,8 @@ def get_max_dist(text, threshold=0.25, limit=6):
     return min(int(len(text) * threshold), limit)
 
 
-@timeout(60)
-def search_phrase(searcher, alignments, ocr):
+@timeout(30)
+def search_phrase(searcher, alignments):
     fuzzy_terms = []
 
     for label, texts in alignments.items():
@@ -74,7 +77,7 @@ def search_phrase(searcher, alignments, ocr):
     # query = whoosh.query.Or(fuzzy_terms + line_terms)
 
     query = whoosh.query.Or(fuzzy_terms)
-    print(query)
+    # print(query)
     return searcher.search(query, limit=None) # TODO: Increase limit?
 
 
@@ -137,106 +140,123 @@ def parse_alignments(alignments, ocr):
     return result
 
 
-def save_results(alignment, matching, path):
+# def save_results(alignment, matching, path):
+#     with open(os.path.join(path, "alignment.txt"), "w") as f:
+#         f.write(alignment)
+
+#     with open(os.path.join(path, "matching.txt"), "w") as f:
+#         f.write(matching)
+
+def save_results(result, path):
+    matching_output = ""
+    alignment_output = ""
+
+    for value in result:
+        if not value:
+            continue
+
+        matching_line, alignment_line = value
+        matching_output += matching_line
+        alignment_output += alignment_line
+
     with open(os.path.join(path, "alignment.txt"), "w") as f:
-        f.write(alignment)
+        f.write(alignment_output)
 
     with open(os.path.join(path, "matching.txt"), "w") as f:
-        f.write(matching)
+        f.write(matching_output)
+
+
+def process_file(line, args):
+    # process = psutil.Process(os.getpid())
+    # print(f"Process {process} currently using {process.memory_info().rss / 1024 ** 2} MB")  # in bytes
+    file_path, *alignments = line.split("\t")
+
+    print(f"\nMatching {file_path}")
+
+    ocr_txn = lmdb.open(args.ocr_lmdb, readonly=True, lock=False).begin()
+    bib_txn = lmdb.open(args.bib_lmdb, readonly=True, lock=False).begin()
+    ocr = load_ocr(file_path.strip(), ocr_txn)
+
+    parsed_alignments = parse_alignments(alignments, ocr)
+
+    index = whoosh.index.open_dir(args.index_dir)
+    with index.searcher(weighting=whoosh.scoring.BM25F) as searcher:
+        try:
+            results = search_phrase(searcher, parsed_alignments)
+        except TimeoutError:
+            print(f"Timeout reached on file {file_path}, skipping")
+            return None
+
+        records = []
+        for r in results:
+            records.append(json.loads(bib_txn.get(r["record_id"].encode()).decode()))
+
+        matches = [match_candidate(ocr, r) for r in records]
+        match_scores = [len(match) for match in matches]
+        print(f"Found {len(matches)} candidates.")
+
+        if not len(matches):
+            return None, None
+
+        if max(match_scores) >= args.min_matched_lines:
+            print(f"Best match for file {file_path} is {results[np.argmax(match_scores)]['record_id']} with score: {max(match_scores)}")
+
+            matching_output = f"{file_path}\t{results[np.argmax(match_scores)]['record_id']}\t{max(match_scores)}\n"
+            
+            alignment_output = f"{file_path}"
+            for f_line in matches[np.argmax(match_scores)]:
+                alignment_output += f"\t{f_line['label']} {f_line['from']} {f_line['to']}"
+            alignment_output += "\n"
+
+            return matching_output, alignment_output
+        else:
+            print(f"Not enough matches found for file {file_path} (must be higher than {args.min_matched_lines}")
+            return None, None
 
 
 def main():
     args = parse_arguments()
 
-    print("Reading index ...")
-    index = whoosh.index.open_dir(args.index_dir)
-    print("Index loaded.")
+    # print("Loading mzk-bib file ...")
+    # bib_records = helper.get_db_dict(args.bib_file)
+    # print("mzk-bib file loaded.")
 
-    print("Opening bib LMDB ...")
-    txn_bib = lmdb.open(args.bib_lmdb, readonly=True, lock=False).begin()
-    print("bib LMDB open.")
-
-    print("Opening ocr LMDB ...")
-    txn_ocr = lmdb.open(args.ocr_lmdb, readonly=True, lock=False).begin()
-    print("ocr LMDB open.")
-
-    nb_cards_searched = 0
-    matching_output = ""
-    alignment_output = ""
-
+    print("Reading inference data ...")
+    with open(args.inference_path, "r") as f:
+        inference_lines = f.readlines()
+    print("Inference data read.")
+    
     process = psutil.Process(os.getpid())
-    print(f"Process using  {process.memory_info().rss / 1024 ** 2} MB before index searcher context.")\
+    print(f"Before search, {process.memory_info().rss / 1024 ** 2} MB of memory is used.")  # in bytes
 
     print("Starting search ...")
-    with index.searcher(weighting=whoosh.scoring.BM25F) as searcher:
-        t0 = time.time()
-        
-        process = psutil.Process(os.getpid())
-        print(f"Process using  {process.memory_info().rss / 1024 ** 2} MB after creating index seracher context.")
 
-        try:
-            with open(args.inference_path, "r") as f:
-                all_lines = f.readlines()
+    t0 = time.time()
+    processing_function = partial(process_file, args=args)
+    print("Partial function created")
 
-            process = psutil.Process(os.getpid())
-            print(f"Process using  {process.memory_info().rss / 1024 ** 2} MB right before search start")
+    pool = Pool(processes=4)
+    print("Pool created")
 
-            idx = random.randint(0, 2e6)
-            for line in all_lines[idx:idx+10]:
-                print()
-                file_path, *alignments = line.split("\t")
+    result = []
 
-                print(f"Matching {file_path}")
+    try:
+        for match, alig in pool.imap_unordered(processing_function, inference_lines):
+            if match and alig:
+                result.append((match, alig))
+    except KeyboardInterrupt:
+        pass
 
-                ocr = load_ocr(file_path.strip(), txn_ocr)
-                parsed_alignments = parse_alignments(alignments, ocr)
-
-                nb_cards_searched += 1
-
-                t_debug = time.time()
-
-                try:
-                    results = search_phrase(searcher, parsed_alignments, ocr)
-                except TimeoutError:
-                    print(f"Timeout reached on file {file_path}, skipping")
-                    continue
-
-                search_dur = time.time() - t_debug
-                print(f'Index search took {search_dur:.1f}s')
-
-                records = []
-                for r in results:
-                    records.append(json.loads(txn_bib.get(r["record_id"].encode()).decode()))
-                matches = [match_candidate(ocr, r) for r in records]
-                match_scores = [len(match) for match in matches]
-                print(f"Found {len(matches)} candidates with scores:.")
-
-                if not len(matches):
-                    continue
-
-                if max(match_scores) >= args.min_matched_lines:
-                    print(f"Best match for file {file_path} is {results[np.argmax(match_scores)]['record_id']} with score: {max(match_scores)}")
-
-                    matching_output += f"{file_path}\t{results[np.argmax(match_scores)]['record_id']}\t{max(match_scores)}\n"
-                    
-                    alignment_output += f"{file_path}"
-                    for f_line in matches[np.argmax(match_scores)]:
-                        alignment_output += f"\t{f_line['label']} {f_line['from']} {f_line['to']}"
-                    alignment_output += "\n"
-                else:
-                    print(f"Not enough matches found for file {file_path} (must be higher than {args.min_matched_lines}")
-
-        except KeyboardInterrupt:
-            pass
-
-        t1 = time.time()
+    t1 = time.time()
 
     dur = t1 - t0
-    nb_records = nb_cards_searched
-    print(f'Took {dur:.1f} seconds to search {nb_records} records. {dur / nb_records:.2f}s')
+    # nb_records = nb_cards_searched
+    # print(f'Took {dur:.1f} seconds to search {nb_records} records. {dur / nb_records:.2f}s')
+    print(f"Took {dur:.1f} seconds to search the records.")
 
     print("Saving results ...")
-    save_results(alignment_output, matching_output, args.out_path)
+    # save_results(alignment_output, matching_output, args.out_path)
+    save_results(result, args.out_path)
     print(f"Results saved to {args.out_path}")
 
 

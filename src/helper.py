@@ -85,7 +85,10 @@ topic_pattern = DatabaseRecordPattern(keys=["650"])
 
 
 def generate_db_records(db_key, text):
-    parts = split_line(text)
+    try:
+        parts = split_line(text)
+    except IndexError:
+        return {}
     
     if author_pattern.matches(db_key, text):
         return {"Author": parts["a"]}
