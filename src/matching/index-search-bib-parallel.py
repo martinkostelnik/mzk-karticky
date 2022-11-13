@@ -185,7 +185,7 @@ def process_file(line, args):
             results = search_phrase(searcher, parsed_alignments)
         except TimeoutError:
             print(f"Timeout reached on file {file_path}, skipping")
-            return None
+            return None, None
 
         records = []
         for r in results:
