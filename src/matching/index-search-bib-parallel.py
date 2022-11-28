@@ -23,7 +23,7 @@ from src.alignment.timeout import timeout, TimeoutError
 from multiprocessing import Pool
 from functools import partial
 
-        
+
 def parse_arguments():
     parser = argparse.ArgumentParser()
 
@@ -147,23 +147,38 @@ def parse_alignments(alignments, ocr):
 #     with open(os.path.join(path, "matching.txt"), "w") as f:
 #         f.write(matching)
 
+# def save_results(result, path):
+#     matching_output = ""
+#     alignment_output = ""
+
+#     for value in result:
+#         if not value:
+#             continue
+
+#         matching_line, alignment_line = value
+#         matching_output += matching_line
+#         alignment_output += alignment_line
+
+#     with open(os.path.join(path, "alignment.txt"), "w") as f:
+#         f.write(alignment_output)
+
+#     with open(os.path.join(path, "matching.txt"), "w") as f:
+#         f.write(matching_output)
+
+
 def save_results(result, path):
-    matching_output = ""
-    alignment_output = ""
+    output = ""
 
-    for value in result:
-        if not value:
-            continue
+    for filename, candidates in result.items():
+        output += f"{filename}"
 
-        matching_line, alignment_line = value
-        matching_output += matching_line
-        alignment_output += alignment_line
+        for candidate in candidates:
+            output += f"\t{candidate}"
 
-    with open(os.path.join(path, "alignment.txt"), "w") as f:
-        f.write(alignment_output)
+        output += "\n"
 
-    with open(os.path.join(path, "matching.txt"), "w") as f:
-        f.write(matching_output)
+    with open(os.path.join(path, "candidates.txt"), "w") as f:
+        f.write(output)
 
 
 def process_file(line, args):
@@ -185,33 +200,36 @@ def process_file(line, args):
             results = search_phrase(searcher, parsed_alignments)
         except TimeoutError:
             print(f"Timeout reached on file {file_path}, skipping")
-            return None, None
+            # return None, None
+            return file_path, []
 
-        records = []
-        for r in results:
-            records.append(json.loads(bib_txn.get(r["record_id"].encode()).decode()))
+        return file_path, [r["record_id"] for r in results]
 
-        matches = [match_candidate(ocr, r) for r in records]
-        match_scores = [len(match) for match in matches]
-        print(f"Found {len(matches)} candidates.")
+        # records = []
+        # for r in results:
+        #     records.append(json.loads(bib_txn.get(r["record_id"].encode()).decode()))
 
-        if not len(matches):
-            return None, None
+        # matches = [match_candidate(ocr, r) for r in records]
+        # match_scores = [len(match) for match in matches]
+        # print(f"Found {len(matches)} candidates.")
 
-        if max(match_scores) >= args.min_matched_lines:
-            print(f"Best match for file {file_path} is {results[np.argmax(match_scores)]['record_id']} with score: {max(match_scores)}")
+        # if not len(matches):
+        #     return None, None
 
-            matching_output = f"{file_path}\t{results[np.argmax(match_scores)]['record_id']}\t{max(match_scores)}\n"
+        # if max(match_scores) >= args.min_matched_lines:
+        #     print(f"Best match for file {file_path} is {results[np.argmax(match_scores)]['record_id']} with score: {max(match_scores)}")
+
+        #     matching_output = f"{file_path}\t{results[np.argmax(match_scores)]['record_id']}\t{max(match_scores)}\n"
             
-            alignment_output = f"{file_path}"
-            for f_line in matches[np.argmax(match_scores)]:
-                alignment_output += f"\t{f_line['label']} {f_line['from']} {f_line['to']}"
-            alignment_output += "\n"
+        #     alignment_output = f"{file_path}"
+        #     for f_line in matches[np.argmax(match_scores)]:
+        #         alignment_output += f"\t{f_line['label']} {f_line['from']} {f_line['to']}"
+        #     alignment_output += "\n"
 
-            return matching_output, alignment_output
-        else:
-            print(f"Not enough matches found for file {file_path} (must be higher than {args.min_matched_lines}")
-            return None, None
+        #     return matching_output, alignment_output
+        # else:
+        #     print(f"Not enough matches found for file {file_path} (must be higher than {args.min_matched_lines}")
+        #     return None, None
 
 
 def main():
@@ -238,12 +256,16 @@ def main():
     pool = Pool(processes=4)
     print("Pool created")
 
-    result = []
+    result = {}
 
     try:
-        for match, alig in pool.imap_unordered(processing_function, inference_lines):
-            if match and alig:
-                result.append((match, alig))
+        # for match, alig in pool.imap_unordered(processing_function, inference_lines):
+        #     if match and alig:
+        #         result.append((match, alig))
+
+        for filename, candidate_list in pool.imap_unordered(processing_function, inference_lines[:100]):
+            if candidate_list:
+                result[filename] = candidate_list
     except KeyboardInterrupt:
         pass
 

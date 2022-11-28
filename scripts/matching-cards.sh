@@ -10,7 +10,7 @@ export PATH="$BASE/venv/bin:$PATH"
 INDEX_SEARCH_SCRIPT=$BASE/src/matching/index-search-bib-parallel.py
 INDEX_DIR=$BASE/data/index
 INFERENCE_PATH=$BASE/inference-2022-10-27-e12/dataset.all
-OUT_DIR=$BASE/matching_output
+OUT_DIR=$BASE/matching_output_tmp
 
 mkdir -p $OUT_DIR
 

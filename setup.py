@@ -7,5 +7,6 @@ setup(
         'src/alignment',
         'src/label_studio',
         'src/NER',
+        'src/lambert'
     ],
 )
