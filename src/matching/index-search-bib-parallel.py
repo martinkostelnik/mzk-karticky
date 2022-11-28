@@ -34,6 +34,8 @@ def parse_arguments():
     parser.add_argument('--bib-lmdb', required=True, help="Path to a bib file.")
     parser.add_argument("--out-path", required=True, help="Output directory.")
 
+    parser.add_argument("--files", required=True, help="asdf.")
+
     args = parser.parse_args()
     return args
 
@@ -242,6 +244,11 @@ def main():
     print("Reading inference data ...")
     with open(args.inference_path, "r") as f:
         inference_lines = f.readlines()
+
+    inference_lines_d = {}
+    for line in inference_lines:
+        filename, *alignments = line.split("\t")
+        inference_lines_d[filename.strip()] = line
     print("Inference data read.")
     
     process = psutil.Process(os.getpid())
@@ -253,6 +260,36 @@ def main():
     processing_function = partial(process_file, args=args)
     print("Partial function created")
 
+    with open(args.files, "r") as f:
+        good_files = f.readlines()
+    print(len(good_files))
+
+    good_inference_lines = []
+
+    MIN_ALIGNED = 4
+    MUST_ALIGN = set(["Author", "Title", "ID"])
+
+    for i, training_file in enumerate(good_files):
+        filename = training_file
+
+        try:
+            line = inference_lines_d[training_file.strip()]
+            _, *alignments = line.split("\t")
+        except KeyError:
+            continue
+        labels = []
+
+        for alignment in alignments:
+            label, *_ = alignment.split(" ")
+            labels.append(label)
+
+        labels = set(labels)
+
+        if MUST_ALIGN.issubset(labels) and len(labels) >= MIN_ALIGNED:
+            good_inference_lines.append(line)
+
+    print(len(good_inference_lines))
+
     pool = Pool(processes=4)
     print("Pool created")
 
@@ -263,7 +300,7 @@ def main():
         #     if match and alig:
         #         result.append((match, alig))
 
-        for filename, candidate_list in pool.imap_unordered(processing_function, inference_lines[:100]):
+        for filename, candidate_list in pool.imap_unordered(processing_function, good_inference_lines[:100]):
             if candidate_list:
                 result[filename] = candidate_list
     except KeyboardInterrupt:

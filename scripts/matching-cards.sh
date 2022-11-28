@@ -10,6 +10,7 @@ export PATH="$BASE/venv/bin:$PATH"
 INDEX_SEARCH_SCRIPT=$BASE/src/matching/index-search-bib-parallel.py
 INDEX_DIR=$BASE/data/index
 INFERENCE_PATH=$BASE/inference-2022-10-27-e12/dataset.all
+FILES_PATH=$BASE/data/good_filenames_.txt
 OUT_DIR=$BASE/matching_output_tmp
 
 mkdir -p $OUT_DIR
@@ -20,4 +21,5 @@ python $INDEX_SEARCH_SCRIPT \
     --bib-lmdb $BIB_LMDB_PATH \
     --inference-path $INFERENCE_PATH \
     --out-path $OUT_DIR \
-    --min-matched-lines 4
+    --min-matched-lines 4 \
+    --files $FILES_PATH
