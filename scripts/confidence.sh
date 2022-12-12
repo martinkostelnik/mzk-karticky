@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Author: Martin Kostelník
+# Brief: Run inference for different aggregation functions and confidence thresholds
+#        to determine the best performing combination.
+
 BASE=/home/xkoste12/mzk-karticky
 SCRIPTS_DIR=$BASE/src/NER
 DATA_DIR=$BASE/data

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Author: Martin Kostelník
+# Brief: Run inference using NER model.
+
 BASE=/home/xkoste12/mzk-karticky
 
 source $BASE/venv/bin/activate

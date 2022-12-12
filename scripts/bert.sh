@@ -1,17 +1,20 @@
 #!/bin/bash
 
+# Author: Martin Kostelník
+# Brief: Script to run fine-tuning of pre-trained BERT model
+
 BASE=/home/xkoste12/mzk-karticky
 
 source $BASE/venv/bin/activate
 export PATH="$BASE/venv/bin:$PATH"
 
-SCRIPTS_DIR=$BASE/src/bert
+SCRIPT=$BASE/src/bert/train.py
 DATA_DIR=/mnt/xkoste12/matylda1/ikiss/pero/experiments/bert_training/data/diakorp
 OUT_DIR=$BASE/test-bert-training-output
 
 mkdir -p $OUT_DIR
 
-python train.py \
+python $SCRIPT \
     --train-path=$DATA_DIR/lines.trn \
     --test-path=$DATA_DIR/lines.tst \
     --bert-path="bert-base-multilingual-uncased" \

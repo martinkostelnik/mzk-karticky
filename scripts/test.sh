@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Author: Martin Kostelník
+# Brief: Test a NER model on the test dataset
+
 BASE=/home/xkoste12/mzk-karticky
 
 source $BASE/venv/bin/activate
