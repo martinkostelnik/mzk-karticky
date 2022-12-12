@@ -49,3 +49,16 @@ data/index/
 data/files.test
 data/files.trn
 data/files.val
+data/index-content/
+data/lmdb-bib/
+data/lmdb-clean/
+data/lmdb-pagexml/
+data/alignment.all
+data/alignment2.trn
+data/files.all
+data/good_filenames_.txt
+data/mzk_bib_clean.txt
+matching_output/
+matching_output_tmp/
+data/alignment.good
+data/good_cards.txt
