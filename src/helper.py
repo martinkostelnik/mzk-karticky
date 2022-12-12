@@ -1,5 +1,4 @@
 import re
-from collections import defaultdict
 import collections
 import typing
 import os
@@ -85,60 +84,75 @@ topic_pattern = DatabaseRecordPattern(keys=["650"])
 
 
 def generate_db_records(db_key, text):
+    res = {}
+    records = generate_db_record(db_key, text)
+
+    for key, val in records.items():
+        for item in val:
+            if item:
+                try:
+                    res[key].append(item)
+                except KeyError:
+                    res[key] = [item]
+
+    return res
+
+
+def generate_db_record(db_key, text):
     try:
         parts = split_line(text)
     except IndexError:
         return {}
     
     if author_pattern.matches(db_key, text):
-        return {"Author": parts["a"]}
+        return {"Author": [parts["a"]]}
 
     if title_pattern.matches(db_key, text):
-        return {"Title": parts["a"], "Subtitle": parts["b"]}
+        return {"Title": [parts["a"]], "Subtitle": [parts["b"]]}
 
     if original_title_pattern.matches(db_key, text):
-        return {"Original_title": parts["t"]}
+        return {"Original_title": [parts["t"]]}
 
     if publisher_pattern.matches(db_key, text):
-        return {"Publisher": f"{parts['a']}, {parts['b']}", "Date": parts["c"]}
+        return {"Publisher": [parts['a'], parts['b']], "Date": [parts["c"]]}
 
     if pages_pattern.matches(db_key, text):
-        return {"Pages": f"{parts['a']} {parts['e']}"}
+        return {"Pages": [parts['a'], parts['e']]}
 
     if series_pattern.matches(db_key, text):
-        s = ""
+        s = []
 
         for key, val in parts.items():
             if key in ["v", "x"]:
                 continue
 
-            s += f"{val} "
+            s.append(val)
 
-        return {"Series": s, "Volume": parts["v"], "ISSN": parts["x"]}
+        return {"Series": s, "Volume": [parts["v"]], "ISSN": [parts["x"]]}
 
     if edition_pattern.matches(db_key, text):
-        return {"Edition": parts["a"]}
+        return {"Edition": [parts["a"]]}
 
     if references_pattern.matches(db_key, text):
-        return {"References": parts["a"]}
+        return {"References": [parts["a"]]}
 
     if id_pattern.matches(db_key, text):
-        s = ""
+        s = []
 
         IDs = text.split("$$")
         for id in IDs[1:]:
-            s += f"{id[1:]} "
+            s.append(id[1:])
 
         return {"ID": s}
 
     if isbn_pattern.matches(db_key, text):
-        return {"ISBN": parts["a"]}
+        return {"ISBN": [parts["a"]]}
 
     if issn_pattern.matches(db_key, text):
-        return {"ISSN": parts["a"]}
+        return {"ISSN": [parts["a"]]}
 
     if topic_pattern.matches(db_key, text):
-        return {"Topic": parts["a"]}
+        return {"Topic": [parts["a"]]}
 
     return {}
 
@@ -146,7 +160,7 @@ def split_line(line):
     """ The '$$' is used as field separator in the individual DB records 
     """
 
-    d = defaultdict(lambda: "")
+    d = collections.defaultdict(lambda: "")
 
     for part in line.split("$$")[1:]:
         d[part[0]] = part[1:]
@@ -190,6 +204,8 @@ def create_mapping(path):
 
 def get_db_dict(path: str) -> typing.Dict[str, typing.Dict[str, str]]:
     all_data: typing.Dict[str, typing.Dict[str, str]] = collections.defaultdict(dict)
+    overwrite = 0
+    total = 0
 
     with open(path, "r") as bib_file:
         for line in bib_file:
@@ -198,36 +214,38 @@ def get_db_dict(path: str) -> typing.Dict[str, typing.Dict[str, str]]:
             except ValueError:
                 continue
 
+            # try:
+            #     all_data[file_id][field_id].append(content)
+            # except KeyError:
+            #     all_data[file_id][field_id] = [content]
+
+
             all_data[file_id][field_id] = content
 
     return all_data
 
 
 def parse_line(line: str):
+    if not line.startswith("mzk"):
+        raise ValueError("Line does not start with 'mzk'")
+    
+    if len(line) <= 1 or line == "":
+        raise ValueError("Line too short")
+
     fields = line.split()
 
     if len(fields) < 4:
-        raise ValueError("Line too short")
-
-    if not line.startswith("mzk"):
-        raise ValueError("Invalid line")
+        raise ValueError("Too few values in split")
 
     card_id = fields[0]
     fields = fields[1:]
 
-    try:
-        ind_of_L = fields.index('L')
-    except ValueError:
-        try:
-            ind_of_L = fields.index("I")
-        except ValueError:
-            try:
-                ind_of_L = fields.index("S")
-            except ValueError:
-                ind_of_L = fields.index("H")
+    if fields[1] not in ["S", "L", "H", "I", "n"] and fields[2] in ["S", "L", "H", "I", "n"]:
+        # print(fields) # TODO: CHECK THE FIELD NUMBERS HERE
+        del fields[1]
 
-    entry_type = fields[:ind_of_L]
-    content = ' '.join(fields[ind_of_L + 1:])
+    entry_type = fields[0]
+    content = ''.join(fields[2:])
 
-    return card_id, entry_type[0], content
+    return card_id, entry_type, content
     
