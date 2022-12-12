@@ -6,6 +6,8 @@
 #$ -l h=!(pcspeech-gpu|supergpu3|supergpu4|supergpu6|supergpu8|supergpu9|supergpu10|supergpu11|supergpu12|supergpu13|supergpu14|supergpu15|supergpu16|supergpu17|supergpu18)
 #$ -S bash
 
+# Author: Karel Beneš
+
 echo $(hostname)
 
 PARSE_FOLDER=/mnt/matylda5/ibenes/teh_codez/pero-ocr/user_scripts/parse_folder.py

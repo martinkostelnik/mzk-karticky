@@ -4,6 +4,8 @@
 #$ -l matylda5=1.5
 #$ -S bash
 
+# Author: Karel Beneš
+
 echo $(hostname)
 
 readarray -t data_dirs </mnt/matylda5/ibenes/projects/pero/MZK-karticky/data_dirs.txt

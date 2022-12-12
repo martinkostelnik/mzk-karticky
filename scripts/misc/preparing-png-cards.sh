@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Author: Karel Beneš
+# Brief : Extract OCR files
+
 WORKDIR=/mnt/matylda5/ibenes/projects/pero/MZK-karticky/all-karticky
 
 mkdir -p $WORKDIR

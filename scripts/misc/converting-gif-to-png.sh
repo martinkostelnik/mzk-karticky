@@ -2,6 +2,8 @@
 #$ -l matylda5=2.5
 #$ -S bash
 
+# Author: Karel Beneš
+
 SOURCE_DIR=/mnt/matylda5/ibenes/projects/pero/MZK-karticky/all-karticky
 TARGET_DIR=/mnt/matylda5/ibenes/projects/pero/MZK-karticky/all-karticky-png
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Author: Karel Beneš
+
 match_dir=/mnt/matylda5/ibenes/projects/pero/MZK-karticky/all-karticky-full_id-matches-vFiltered_universal-all/
 
 cd $match_dir

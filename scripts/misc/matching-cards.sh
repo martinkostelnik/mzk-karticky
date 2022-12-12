@@ -4,6 +4,9 @@
 #$ -l matylda5=0.2
 #$ -S bash
 
+# Author: Karel Beneš
+# Brief: Old script to run matching of OCR cards with database IDs
+
 echo $(hostname)
 
 INDEX_SEARCH=/mnt/matylda5/ibenes/projects/pero/MZK-karticky/index-search-bib.py
