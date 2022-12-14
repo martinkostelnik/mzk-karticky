@@ -2,7 +2,6 @@ import argparse
 import os
 import time
 import lmdb
-import json
 import random
 
 import numpy as np
@@ -16,6 +15,9 @@ from src import helper
 from src.NER.helper import load_ocr
 from src.alignment.align_fuzzysearch import correct_overlaps
 from src.alignment.timeout import timeout, TimeoutError
+
+from tokenizers import normalizers
+from tokenizers.normalizers import NFD, StripAccents, Lowercase
 
 
 def parse_arguments():
@@ -42,7 +44,7 @@ def get_max_dist(text, threshold=0.25, limit=6):
     return min(int(len(text) * threshold), limit)
 
 
-@timeout(30)
+@timeout(60)
 def search_phrase(searcher, alignments):
     fuzzy_terms = []
 
@@ -53,11 +55,7 @@ def search_phrase(searcher, alignments):
             words = [word for word in text.split() if len(word) > 3]
 
             for word in words:
-                if label == "Author":
-                    fuzzy_terms.append(whoosh.query.FuzzyTerm("author1", word, maxdist=2, prefixlength=0))
-                    fuzzy_terms.append(whoosh.query.FuzzyTerm("author2", word, maxdist=2, prefixlength=0))
-                else:
-                    fuzzy_terms.append(whoosh.query.FuzzyTerm(label.lower(), word, maxdist=2, prefixlength=0))
+                fuzzy_terms.append(whoosh.query.FuzzyTerm(label.lower(), word, maxdist=2, prefixlength=0))
 
     query = whoosh.query.Or(fuzzy_terms)
     return searcher.search(query, limit=None)
@@ -71,7 +69,35 @@ def search_phrase(searcher, alignments):
 #     if len(line) > 20:
 #         return False
 
-#     return True
+#     return True    
+
+
+def correct_successors(lines: list) -> list:
+    max_diff = 3
+    flag = True
+
+    idx = 1
+    while flag:
+        if idx == len(lines):
+            idx = 1
+            flag = False
+
+        prev_line = lines[idx - 1]
+        line = lines[idx]
+
+        if line["label"] == prev_line["label"] and abs(prev_line["to"] - line["from"]) <= max_diff:
+            flag = True
+            item = {"label": line["label"],
+                    "from": prev_line["from"],
+                    "to": line["to"]}
+
+            del lines[idx]
+            if len(lines) == 1:
+                break
+        else:
+            idx += 1
+
+    return lines
 
 
 # We tried to match inferred fields to db entries. Now we have several databse-IDS which
@@ -81,27 +107,27 @@ def search_phrase(searcher, alignments):
 def match_candidate(ocr: str, db: dict) -> list:
     fields = []
 
-    for raw_label, raw_text in db.items():
-        parsed_db_item = helper.generate_db_records(raw_label, raw_text) # raw_label == gov code | raw_text == dollars
+    for label, entries in db.items():
+        for entry in entries:
+            if len(entry) < 4 or (label == "id" and entry.isnumeric() and len(entry) == 4):
+                continue
 
-        for label, text in parsed_db_item.items():
-            for item in text:
-                if len(item) < 4:
-                    continue
+            max_dist = get_max_dist(entry)
+            matches = find_near_matches(entry, ocr, max_l_dist=max_dist)
 
-                max_dist = get_max_dist(item)
-                matches = find_near_matches(item, ocr, max_l_dist=max_dist)
+            lowest = min(matches, key=lambda x: x.dist, default=None)
 
-                lowest = min(matches, key=lambda x: x.dist, default=None)
-
-                if lowest:
-                    fields.append({"label": label, "text": lowest.matched, "from": lowest.start, "to": lowest.end})
+            if lowest:
+                fields.append({"label": label, "text": lowest.matched, "from": lowest.start, "to": lowest.end})
 
     try:
         fields = correct_overlaps(fields)
     except:
         print(f"Error during correcting overlaps")
         return []
+
+    if len(fields) > 1:
+        fields = correct_successors(fields)
 
     for line in fields:
         line["text"] = ocr[line["from"]:line["to"]]
@@ -130,6 +156,21 @@ def save_results(results, path):
             print(alignment,file=alig_f, end="")
 
 
+def parse_bib_string(bib_record: str) -> dict:
+    result = {}
+
+    lines = bib_record.split("\n")
+    lines = [line for line in lines if line]
+
+    for line in lines:
+        fields = line.split("\t")
+        label = fields[0]
+        assert label not in result.keys()
+        result[label] = fields[1:]
+
+    return result
+
+
 def process_file(line, args):
     file_path, *alignments = line.split("\t")
 
@@ -138,6 +179,9 @@ def process_file(line, args):
     ocr_txn = lmdb.open(args.ocr_lmdb, readonly=True, lock=False).begin()
     bib_txn = lmdb.open(args.bib_lmdb, readonly=True, lock=False).begin()
     ocr = load_ocr(file_path.strip(), ocr_txn)
+
+    normalizer = normalizers.Sequence([NFD(), StripAccents(), Lowercase()])
+    ocr = normalizer.normalize_str(ocr)
 
     parsed_alignments = parse_alignments(alignments, ocr)
 
@@ -153,8 +197,8 @@ def process_file(line, args):
         candidate_dbs = []
         for candidate in candidates:
             bib_string = bib_txn.get(candidate["record_id"].encode()).decode()
-            bib_json = json.loads(bib_string)
-            candidate_dbs.append(bib_json)
+            bib_dict = parse_bib_string(bib_string)
+            candidate_dbs.append(bib_dict)
 
         candidate_alignments = [match_candidate(ocr, candidate_db) for candidate_db in candidate_dbs] # [[alignments..], [alignments..], ..]
         match_scores = [len(candidate_alignment) for candidate_alignment in candidate_alignments]
@@ -174,7 +218,8 @@ def process_file(line, args):
             
             alignment_output = f"{file_path}"
             for alignment in best_candidate_alignment:
-                alignment_output += f"\t{alignment['label']} {alignment['from']} {alignment['to']}"
+                u_label = alignment["label"][0].upper() + alignment["label"][1:]
+                alignment_output += f"\t{u_label} {alignment['from']} {alignment['to']}"
             alignment_output += "\n"
 
             return matching_output, alignment_output
@@ -198,8 +243,9 @@ def main() -> int:
     t0 = time.time()
         
     # DEBUG: SELECT RANDOM INDEX TO START FROM AND TAKE ONLY 10 
-    idx = random.randint(0, 2e6)                             ##
-    inference_lines = inference_lines[idx:idx + 10]          ##
+    # idx = random.randint(0, 2e6)                             ##
+    # inference_lines = inference_lines[idx:idx + 15]          ##
+    # print(f"SEED = {idx}")                                   ##
     ###########################################################
 
     try:

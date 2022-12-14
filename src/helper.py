@@ -141,7 +141,8 @@ def generate_db_record(db_key, text):
 
         IDs = text.split("$$")
         for id in IDs[1:]:
-            s.append(id[1:])
+            if id[0] == "b":
+                s.append(id[1:])
 
         return {"ID": s}
 
@@ -245,7 +246,7 @@ def parse_line(line: str):
         del fields[1]
 
     entry_type = fields[0]
-    content = ''.join(fields[2:])
+    content = ' '.join(fields[2:])
 
     return card_id, entry_type, content
     
