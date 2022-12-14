@@ -62,3 +62,5 @@ matching_output/
 matching_output_tmp/
 data/alignment.good
 data/good_cards.txt
+data/index-bib-normalized/
+data/lmdb-bib-normalized/
