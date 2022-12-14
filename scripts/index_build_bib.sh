@@ -10,7 +10,7 @@ source $BASE/venv/bin/activate
 export PATH="$BASE/venv/bin:$PATH"
 
 INDEX_BUILD_SCRIPT=$BASE/src/matching/index_build_bib.py
-INDEX_DIR=$BASE/data/index-content
+INDEX_DIR=$BASE/data/index-bib-normalized
 
 mkdir -p $INDEX_DIR
 
