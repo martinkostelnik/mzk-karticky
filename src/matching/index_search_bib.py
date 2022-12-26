@@ -55,9 +55,11 @@ def search_phrase(searcher, alignments):
             words = [word for word in text.split() if len(word) > 3]
 
             for word in words:
-                fuzzy_terms.append(whoosh.query.FuzzyTerm(label.lower(), word, maxdist=2, prefixlength=0))
+                # fuzzy_terms.append(whoosh.query.FuzzyTerm(label.lower(), word, maxdist=2, prefixlength=0))
+                fuzzy_terms.append(whoosh.query.FuzzyTerm("content", word, maxdist=1, prefixlength=0))
 
     query = whoosh.query.Or(fuzzy_terms)
+    # print(query)
     return searcher.search(query, limit=None)
 
 
