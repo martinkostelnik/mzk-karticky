@@ -7,6 +7,9 @@ setup(
         'src/alignment',
         'src/label_studio',
         'src/NER',
-        'src/lambert'
+        'src/lambert',
+        'src/matching',
+        'src/old',
+        'src/bert'
     ],
 )
