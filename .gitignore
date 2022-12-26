@@ -64,3 +64,4 @@ data/alignment.good
 data/good_cards.txt
 data/index-bib-normalized/
 data/lmdb-bib-normalized/
+data/index-bib-normalized-joint/
