@@ -17,6 +17,7 @@ def parse_arguments():
     parser.add_argument("--tokenizer-path", help="Path to a tokenizer.", required=True)
     parser.add_argument("--data-path", help="Path to a text file with test data.", required=True)
     parser.add_argument("--ocr-path", help="Path to a directory containing ocr.", required=True)
+    parser.add_argument("--xml-path", default=None, help="Path to LMDB with xmls from OCR in case lambert backend is used.")
 
     args = parser.parse_args()
     return args
@@ -40,7 +41,12 @@ def main() -> int:
     print("Model loaded.")
     
     BATCH_SIZE = 16
-    data = load_dataset(args.data_path, args.ocr_path, BATCH_SIZE, tokenizer, model_config)
+    data = load_dataset(data_path=args.data_path,
+                                ocr_path=args.ocr_path,
+                                batch_size=BATCH_SIZE,
+                                tokenizer=tokenizer,
+                                model_config=model_config,
+                                bboxes_txn=args.xml_path)
     print("Dataset loaded.")
 
     tester = Tester(model)

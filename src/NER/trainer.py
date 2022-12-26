@@ -13,7 +13,7 @@ class Trainer:
         # Set training settings
         self.epochs = settings["epochs"]
         self.model = model
-        self.optim = torch.optim.Adam(self.model.parameters(), lr=settings["learning_rate"])
+        self.optim = torch.optim.AdamW(self.model.parameters(), lr=settings["learning_rate"])
         self.max_norm = settings["max_grad_norm"]
 
         # Set misc settings
@@ -48,8 +48,9 @@ class Trainer:
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
         labels = batch["labels"].to(device)
-
-        loss, logits = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        bboxes = batch["bboxes"].to(device) if self.model.config.backend == "lambert" or self.model.config.bboxes else None
+        
+        loss, logits = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels, bboxes=bboxes)
 
         return loss, logits[0]
 

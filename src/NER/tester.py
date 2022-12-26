@@ -21,8 +21,9 @@ class Tester:
         input_ids = batch["input_ids"].to(self.device)
         attention_mask = batch["attention_mask"].to(self.device)
         labels = batch["labels"].to(self.device)
+        bboxes = batch["bboxes"].to(self.device) if self.model.config.backend == "lambert" or self.model.config.bboxes else None
 
-        loss, logits = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        loss, logits = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels, bboxes=bboxes)
 
         return loss, logits[0]
 

@@ -16,10 +16,11 @@ class Alignment:
 
 
 class Annotation:
-    def __init__(self, file_id: str, text: str, alignments: list[Alignment]):
+    def __init__(self, file_id: str, text: str, alignments: list[Alignment], bboxes: list[tuple] = None):
         self.file_id = file_id
         self.text = text
         self.alignments = alignments
+        self.bboxes = bboxes
 
     def __str__(self):
         output = f"{self.file_id}\n"
@@ -36,7 +37,8 @@ class AlignmentDataset(torch.utils.data.Dataset):
         tokenizer,
         model_config = helper.ModelConfig(),
         min_aligned: int = 1,
-        must_align: list = []
+        must_align: list = [],
+        bboxes_txn = None
     ):
         self.data: typing.List[Annotation] = []
         self.tokenizer = tokenizer
@@ -48,6 +50,7 @@ class AlignmentDataset(torch.utils.data.Dataset):
         self.ocr_path = ocr_path
 
         self._txn = lmdb.open(self.ocr_path, readonly=True, lock=False).begin() if "lmdb" in self.ocr_path else None
+        self.bboxes_txn = lmdb.open(bboxes_txn, readonly=True, lock=False).begin() if bboxes_txn else None
 
         self.formatting_function = self.get_formatting_function()
 
@@ -60,7 +63,7 @@ class AlignmentDataset(torch.utils.data.Dataset):
         if self.model_config.format == ["I", "O"]:
             return helper.offsets_to_io
 
-        raise ValueError("Invalid formatting functionn name. Must be 'iob' or 'io'.")
+        raise ValueError("Invalid formatting function name. Must be 'iob' or 'io'.")
 
     def load_data(self) -> None:
         with open(self.data_path) as file:
@@ -75,7 +78,10 @@ class AlignmentDataset(torch.utils.data.Dataset):
     def parse_annotation(self, line):
         file_path, *alignments = line.split("\t")
         path = file_path if self._txn else os.path.join(self.ocr_path, file_path)
-        return Annotation(file_path, helper.load_ocr(path=path, txn=self._txn), self.parse_alignments(alignments))
+
+        bboxes = helper.load_bboxes(filename=file_path, txn=self.bboxes_txn) if self.bboxes_txn else None
+
+        return Annotation(file_path, helper.load_ocr(path=path, txn=self._txn), self.parse_alignments(alignments), bboxes)
 
     def parse_alignments(self, alignments):
         result = []
@@ -134,14 +140,31 @@ class AlignmentDataset(torch.utils.data.Dataset):
         item["labels"] = torch.as_tensor(encoded_labels)
         item["ids"] = annotation.file_id
 
+        # TODO: Create bboxes, let's assume that SEP is always used 
+        if self.model_config.backend == "lambert" or self.model_config.bboxes:
+            sep_id = 105880 # self.tokenizer.get_added_vocab()[helper.LINE_SEPARATOR]
+            line_index = 0
+            bboxes = [(0, 0, 0, 0)]
+            for id_t in item["input_ids"][1:]:
+                id_r = id_t.item()
+                try:
+                    aabb = annotation.bboxes[line_index]
+                    bboxes.append(aabb)
+                    if id_r == sep_id:
+                        line_index += 1
+                except IndexError:
+                    bboxes.append((0, 0, 0, 0))
+
+            item["bboxes"] = torch.as_tensor(bboxes, dtype=torch.float32)
+
         return item
 
     def __len__(self):
         return len(self.data)
 
 
-def load_dataset(data_path, ocr_path, batch_size, tokenizer, model_config=helper.ModelConfig(), num_workers=0, min_aligned=1, must_align=[]):
-    dataset = AlignmentDataset(data_path=data_path, ocr_path=ocr_path, tokenizer=tokenizer, model_config=model_config, min_aligned=min_aligned, must_align=must_align)
+def load_dataset(data_path, ocr_path, batch_size, tokenizer, model_config=helper.ModelConfig(), num_workers=0, min_aligned=1, must_align=[], bboxes_txn=None):
+    dataset = AlignmentDataset(data_path=data_path, ocr_path=ocr_path, tokenizer=tokenizer, model_config=model_config, min_aligned=min_aligned, must_align=must_align, bboxes_txn=bboxes_txn)
     data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     return data_loader
 
@@ -152,6 +175,7 @@ def parse_arguments():
     parser.add_argument("--data-path", help="Path to the alignments file.")
     parser.add_argument("--ocr-path", help="Path to either (1) dir with OCR files or (2) LMDB with texts from OCR.")
     parser.add_argument("--tokenizer-path", help="Path to the tokenizer.")
+    parser.add_argument("--bboxes", help="Path to the xml lmdb")
 
     args = parser.parse_args()
     return args
@@ -162,7 +186,7 @@ def main():
     config = helper.ModelConfig()
 
     tokenizer = helper.build_tokenizer(path=args.tokenizer_path, model_config=config)
-    dataset = AlignmentDataset(args.data_path, args.ocr_path, tokenizer=tokenizer, model_config=config)
+    dataset = AlignmentDataset(args.data_path, args.ocr_path, tokenizer=tokenizer, model_config=config, bboxes_txn=args.bboxes)
 
     print(f"Dataset size: {len(dataset)}")
     

@@ -30,8 +30,10 @@ def parse_arguments():
     parser.add_argument("--grad", type=float, default=10.0, help="Max grad norm")
 
     # Dataset settings (model specific)
-    parser.add_argument("--sep", action="store_true", default=True, help="Whether to separate lines with [LF] token.")
-    parser.add_argument("--sep-loss", action="store_true", default=False, help="Whether to calculate loss on the [LF] token.")
+    parser.add_argument("--backend", type=str, choices=['bert', 'lambert'], default="bert", help="Backend for feature extraction (bert or lambert)")
+    parser.add_argument("--bboxes", action="store_true", help="Whether add bboxes as classifier input.")
+    parser.add_argument("--sep", action="store_true", help="Whether to separate lines with [LF] token.")
+    parser.add_argument("--sep-loss", action="store_true", help="Whether to calculate loss on the [LF] token.")
     parser.add_argument("--labels", type=str, default="all", help="'all' or 'subset'")
     parser.add_argument("--format", type=str, default="iob", help="'iob' or 'io'")
     parser.add_argument("--max-len", type=int, default=256, help="Max length of token sequence as bert input")
@@ -52,6 +54,7 @@ def parse_arguments():
     parser.add_argument("--train-path", help="Path to a text file with training data.")
     parser.add_argument("--val-path", help="Path to a text file with validation data.")
     parser.add_argument("--test-path", help="Path to a text file with test data.")
+    parser.add_argument("--xml-path", default=None, help="Path to LMDB with xmls from OCR in case lambert backend is used.")
 
     args = parser.parse_args()
     return args
@@ -60,13 +63,23 @@ def parse_arguments():
 if __name__ == "__main__":
     args = parse_arguments()
 
+    if not args.sep and (args.backend == "lambert" or args.bboxes):
+        raise NotImplementedError("Using lambert backend without line separation (--sep argument) is not possible at this moment.")
+
+    if args.backend == "lambert" and args.bboxes:
+        raise NotImplementedError("Using lambert together with bboxes is not implemented.")
+
     model_config = ModelConfig(
         labels=args.labels,
         format=args.format,
         max_len=args.max_len,
         sep=args.sep,
-        sep_loss=args.sep_loss
+        sep_loss=args.sep_loss,
+        backend=args.backend,
+        bboxes=args.bboxes
         )
+
+    print(model_config)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -74,15 +87,32 @@ if __name__ == "__main__":
     tokenizer = helper.build_tokenizer(args.tokenizer_path, model_config)
     print("Tokenizer loaded.")
 
-    model = model.build_model(tokenizer=tokenizer, model_path=args.model_path, pretrained_bert_path=args.bert_path, model_config=model_config)
-    model = model.to(device)
-    print("Model loaded.")
+    model_instance = model.build_model(tokenizer=tokenizer,
+                              model_path=args.model_path,
+                              pretrained_bert_path=args.bert_path,
+                              model_config=model_config)
+    model_instance = model_instance.to(device)
+    print(f"Model loaded.")
+    print(model_instance)
 
-    load_data = partial(load_dataset, ocr_path=args.ocr_path, batch_size=args.batch_size, tokenizer=tokenizer, model_config=model_config, min_aligned=args.min_aligned, must_align=args.must_align)
+    load_data = partial(load_dataset,
+                        ocr_path=args.ocr_path,
+                        batch_size=args.batch_size,
+                        tokenizer=tokenizer,
+                        model_config=model_config,
+                        min_aligned=args.min_aligned,
+                        must_align=args.must_align,
+                        num_workers=2,
+                        bboxes_txn=args.xml_path)
 
     train_dataset = load_data(args.train_path)
     val_dataset = load_data(args.val_path)
-    test_dataset = load_dataset(data_path=args.test_path, ocr_path=args.ocr_path, batch_size=args.batch_size, tokenizer=tokenizer, model_config=model_config)
+    test_dataset = load_dataset(data_path=args.test_path,
+                                ocr_path=args.ocr_path,
+                                batch_size=args.batch_size,
+                                tokenizer=tokenizer,
+                                model_config=model_config,
+                                bboxes_txn=args.xml_path)
     print("Datasets loaded and DataLoaders created.")
 
     trainer_settings = {
@@ -90,20 +120,20 @@ if __name__ == "__main__":
         "learning_rate": args.lr,
         "max_grad_norm": args.grad,
         "bert": args.train_bert,
-        "output_folder": args.save_path
+        "output_folder": args.save_path,
     }
 
     os.makedirs(trainer_settings["output_folder"], exist_ok=True)
     print("Output folder created.")
 
-    trainer = Trainer(settings=trainer_settings, model=model, tokenizer=tokenizer)
+    trainer = Trainer(settings=trainer_settings, model=model_instance, tokenizer=tokenizer)
     print("Trainer created.")
 
     print("Training starts ...")
     trainer.train(train_dataset, val_dataset)
     print("Training finished.")
 
-    tester = Tester(model)
+    tester = Tester(model_instance)
     print("Tester created.")
 
     print("Testing starts ...")

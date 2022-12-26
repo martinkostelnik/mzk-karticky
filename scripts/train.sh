@@ -26,12 +26,11 @@ python -u $SCRIPTS_DIR/train.py \
     --test-path=$DATA_DIR/alignment.test \
     --save-tokenizer \
     --save-path=$OUT_DIR \
+    --min-aligned=4 \
+    --must-align Author Title ID \
     --sep \
     --labels subset \
-    --format iob \
-    --xml-path=$XML_DIR \
-    --backend lambert
-
-
-    #--min-aligned=4 \
-    # --must-align Author Title ID \
+    --format iob 
+    # --xml-path=$XML_DIR \
+    # --bboxes
+    # --backend lambert
