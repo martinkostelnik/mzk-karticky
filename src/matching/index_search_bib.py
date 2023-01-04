@@ -60,7 +60,7 @@ def search_phrase(searcher, alignments):
 
     query = whoosh.query.Or(fuzzy_terms)
     # print(query)
-    return searcher.search(query, limit=None)
+    return searcher.search(query, limit=5000)
 
 
 # def ocr_line_acceptable(line):
@@ -245,9 +245,10 @@ def main() -> int:
     t0 = time.time()
         
     # DEBUG: SELECT RANDOM INDEX TO START FROM AND TAKE ONLY 10 
-    # idx = random.randint(0, 2e6)                             ##
-    # inference_lines = inference_lines[idx:idx + 15]          ##
-    # print(f"SEED = {idx}")                                   ##
+    idx = random.randint(0, 2e6)                             ##
+    idx = 601728
+    inference_lines = inference_lines[idx:idx + 10]          ##
+    print(f"SEED = {idx}")                                   ##
     ###########################################################
 
     try:
@@ -262,7 +263,7 @@ def main() -> int:
 
     t1 = time.time()
     dur = t1 - t0
-    print(f'Took {dur:.1f} seconds to search {cards_searched} records. {dur / cards_searched:.2f}s')
+    print(f'Took {dur:.1f} seconds to search {cards_searched} records. {dur / cards_searched:.2f}s per card avg')
 
     print("Saving results ...")
     save_results(result, args.out_path)

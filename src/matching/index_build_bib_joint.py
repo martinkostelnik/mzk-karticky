@@ -71,7 +71,8 @@ def main():
             
             for vals in records.values():
                 for val in vals:
-                    complete_record += f"{val} "
+                    if len(val) > 3:
+                        complete_record += f"{val} "
 
 
     complete_record = normalizer.normalize_str(complete_record).strip()
