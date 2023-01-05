@@ -61,7 +61,7 @@ def main():
 
             if file_id != prev_file_id:
                 complete_record = normalizer.normalize_str(complete_record).strip()
-                writer.add_document(record_id=file_id, content=complete_record)
+                writer.add_document(record_id=prev_file_id, content=complete_record)
                 prev_file_id = file_id
                 complete_record = ""
                 
