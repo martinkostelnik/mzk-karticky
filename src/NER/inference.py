@@ -1,3 +1,6 @@
+# WARNING: At this moment, inference only works for standard BERT model
+#          It does not work with lambert or bboxes
+
 import os
 import typing
 import argparse
@@ -30,7 +33,7 @@ def parse_arguments():
     parser.add_argument("--threshold", default=0.0, type=float, help="Threshold for selecting field with enough model confidence.")
     parser.add_argument("--aggfunc", default="prod", type=str, help="Confidence aggregation function.")
 
-    parser.add_argument("--mode", type=int, default=0, choices=[0, 1], help="This is to generate training data from lmdb.")
+    parser.add_argument("--mode", type=int, default=0, choices=[0, 1], help="(0) Get data from folder structure OR (1) Get data from LMDB")
     parser.add_argument("--trn", help="Path to file containing training file names.")
     parser.add_argument("--val", help="Path to file containing validation file names.")
     parser.add_argument("--tst", help="Path to file containing test file names.")

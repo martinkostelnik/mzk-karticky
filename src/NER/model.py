@@ -16,10 +16,8 @@ class MZKBert(torch.nn.Module):
         self.bert = bert
         self.d0 = torch.nn.Dropout(0.1)
 
-        if self.config.bboxes:
-            self.x1 = torch.nn.Linear(768 + 4, 512)
-        else:
-            self.x1 = torch.nn.Linear(768, 512)
+        BERT_OUTPUT_SIZE = 768 + 4 if self.config.bboxes else 768
+        self.x1 = torch.nn.Linear(BERT_OUTPUT_SIZE, 512)
 
         self.f1 = torch.nn.ReLU()
         self.d1 = torch.nn.Dropout(0.1)
@@ -28,11 +26,7 @@ class MZKBert(torch.nn.Module):
         self.f2 = torch.nn.ReLU()
         self.d2 = torch.nn.Dropout(0.1)
 
-        self.x3 = torch.nn.Linear(512, 512)
-        self.f3 = torch.nn.ReLU()
-        self.d3 = torch.nn.Dropout(0.1)
-
-        self.x4 = torch.nn.Linear(512, self.num_labels)
+        self.x3 = torch.nn.Linear(512, self.num_labels)
 
     def forward(self, input_ids, attention_mask, labels=None, bboxes=None):
         if self.config.backend == "lambert":
@@ -54,10 +48,6 @@ class MZKBert(torch.nn.Module):
         outputs = self.d2(outputs)
 
         outputs = self.x3(outputs)
-        outputs = self.f3(outputs)
-        outputs = self.d3(outputs)
-
-        outputs = self.x4(outputs)
         
         loss = None
         if labels is not None:
