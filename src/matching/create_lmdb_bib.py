@@ -28,6 +28,17 @@ def load(path):
     return text
 
 
+def generate_content(record: dict) -> str:
+    content = ""
+    for label, values in record.items():
+        content += f"{label}"
+        for value in values:
+            content += f"\t{value}"
+        content += "\n"
+
+    return content
+
+
 def main():
     args = parse_arguments()
 
@@ -58,16 +69,10 @@ def main():
 
                 # If file_id changes, we have the whole file ready, commit to db and reset
                 if file_id != prev_file_id:
-                    content = ""
-                    for label, values in complete_record.items():
-                        content += f"{label}"
-                        for value in values:
-                            content += f"\t{value}"
-                        content += "\n"
-        
+                    content = generate_content(complete_record)
                     content = normalizer.normalize_str(content)
 
-                    write(cur, file_id, content)
+                    write(cur, prev_file_id, content)
                     prev_file_id = file_id
                     complete_record = {}
 
@@ -82,7 +87,10 @@ def main():
                         except KeyError:
                             complete_record[label] = [value]
 
+            content = generate_content(complete_record)
+            content = normalizer.normalize_str(content)
             write(cur, file_id, content) # Write last file
+            
             print(f"{entries_added + 1} files added to LMDB.")
 
     return 0

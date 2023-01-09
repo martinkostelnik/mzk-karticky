@@ -44,7 +44,7 @@ def get_max_dist(text, threshold=0.25, limit=6):
     return min(int(len(text) * threshold), limit)
 
 
-@timeout(60)
+@timeout(180)
 def search_phrase(searcher, alignments):
     fuzzy_terms = []
 
@@ -60,7 +60,7 @@ def search_phrase(searcher, alignments):
 
     query = whoosh.query.Or(fuzzy_terms)
     # print(query)
-    return searcher.search(query, limit=5000)
+    return searcher.search(query, limit=None)
 
 
 # def ocr_line_acceptable(line):
@@ -108,6 +108,7 @@ def correct_successors(lines: list) -> list:
 # The number of matched fields will be our matching score.
 def match_candidate(ocr: str, db: dict) -> list:
     fields = []
+    total_dist = 0
 
     for label, entries in db.items():
         for entry in entries:
@@ -121,12 +122,13 @@ def match_candidate(ocr: str, db: dict) -> list:
 
             if lowest:
                 fields.append({"label": label, "text": lowest.matched, "from": lowest.start, "to": lowest.end})
+                total_dist += lowest.dist / len(entry)
 
     try:
         fields = correct_overlaps(fields)
     except:
         print(f"Error during correcting overlaps")
-        return []
+        return [], 999999999
 
     if len(fields) > 1:
         fields = correct_successors(fields)
@@ -134,7 +136,10 @@ def match_candidate(ocr: str, db: dict) -> list:
     for line in fields:
         line["text"] = ocr[line["from"]:line["to"]]
 
-    return fields
+    if not fields:
+        return [], 999999999
+
+    return fields, total_dist / len(fields)
 
 
 def parse_alignments(alignments, ocr):
@@ -202,32 +207,59 @@ def process_file(line, args):
             bib_dict = parse_bib_string(bib_string)
             candidate_dbs.append(bib_dict)
 
-        candidate_alignments = [match_candidate(ocr, candidate_db) for candidate_db in candidate_dbs] # [[alignments..], [alignments..], ..]
-        match_scores = [len(candidate_alignment) for candidate_alignment in candidate_alignments]
+        candidate_alignments = []
+        # match_scores = []
+        for candidate_db in candidate_dbs:
+            aligss, candidate_total_dist = match_candidate(ocr, candidate_db)
+            if not len(aligss):
+                candidate_alignments.append((aligss, 999999999))
+            else:
+                candidate_alignments.append((aligss, candidate_total_dist))
+
+        # candidate_alignments = [match_candidate(ocr, candidate_db) for candidate_db in candidate_dbs] # [[alignments..], [alignments..], ..]
+        # match_scores = [len(candidate_alignment) for candidate_alignment in candidate_alignments]
 
         if not len(candidate_alignments):
             return None, None
 
-        best_candidate_idx = np.argmax(match_scores)
+        candidate_alignments = [aligs for aligs in candidate_alignments if len(aligs[0]) >= args.min_matched_lines]
+        match_scores = [val[1] for val in candidate_alignments]
+        candidate_alignments = [val[0] for val in candidate_alignments]
+       
+        if not len(candidate_alignments):
+            print(f"Not enough matches found for file {file_path} (must be higher than {args.min_matched_lines})")
+            return None, None
+        
+
+        ##########################################################################
+        ###############################DEBUG######################################
+        # print(len(match_scores))
+        # max_score = np.min(match_scores)
+        # n_same = match_scores.count(max_score)
+        # print(f"{file_path} file has {n_same} candidates with same total distance ({max_score})")
+        ##########################################################################
+
+        best_candidate_idx = np.argmin(match_scores)
+        #best_candidate_idx = np.argmax(match_scores)
         best_candidate_id = candidates[best_candidate_idx]['record_id']
         best_candidate_alignment = candidate_alignments[best_candidate_idx]
         best_candidate_aligned = len(best_candidate_alignment)
 
-        if best_candidate_aligned >= args.min_matched_lines:
-            print(f"Best match for file {file_path} is {best_candidate_id} with score: {best_candidate_aligned}")
+        # if best_candidate_aligned >= args.min_matched_lines:
+        print(f"Best match for file {file_path} is {best_candidate_id} with score: {np.min(match_scores)}, aligned: {len(best_candidate_alignment)}")
 
-            matching_output = f"{file_path}\t{best_candidate_id}\t{best_candidate_aligned}\n"
-            
-            alignment_output = f"{file_path}"
-            for alignment in best_candidate_alignment:
-                u_label = alignment["label"][0].upper() + alignment["label"][1:]
-                alignment_output += f"\t{u_label} {alignment['from']} {alignment['to']}"
-            alignment_output += "\n"
+        matching_output = f"{file_path}\t{best_candidate_id}\t{best_candidate_aligned}\n"
+        
+        alignment_output = f"{file_path}"
+        for alignment in best_candidate_alignment:
+            u_label = alignment["label"][0].upper() + alignment["label"][1:]
+            alignment_output += f"\t{u_label} {alignment['from']} {alignment['to']}"
+        alignment_output += "\n"
 
-            return matching_output, alignment_output
-        else:
-            print(f"Not enough matches found for file {file_path} (must be higher than {args.min_matched_lines}, was {best_candidate_aligned})")
-            return None, None
+        return matching_output, alignment_output
+        # else:
+        #     print(f"Not enough matches found for file {file_path} (must be higher than {args.min_matched_lines}, was {best_candidate_aligned})")
+        #     return None, None
 
 
 def main() -> int:
@@ -245,10 +277,10 @@ def main() -> int:
     t0 = time.time()
         
     # DEBUG: SELECT RANDOM INDEX TO START FROM AND TAKE ONLY 10 
-    idx = random.randint(0, 2e6)                             ##
-    idx = 601728
-    inference_lines = inference_lines[idx:idx + 10]          ##
-    print(f"SEED = {idx}")                                   ##
+    # idx = random.randint(0, 2e6)                             ##
+    # idx = 601728
+    # inference_lines = inference_lines[idx:idx + 10]          ##
+    # print(f"SEED = {idx}")                                   ##
     ###########################################################
 
     try:
