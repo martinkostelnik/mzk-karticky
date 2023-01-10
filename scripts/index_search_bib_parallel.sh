@@ -7,15 +7,14 @@
 
 BASE=/home/xkoste12/mzk-karticky
 OCR_LMDB_PATH=$BASE/data/lmdb
-BIB_LMDB_PATH=$BASE/data/lmdb-bib
+BIB_LMDB_PATH=$BASE/data/lmdb-bib-normalized
+INDEX_SEARCH_SCRIPT=$BASE/src/matching/index_search_bib_parallel.py
+INDEX_DIR=$BASE/data/index-bib-normalized-joint-long
+INFERENCE_PATH=$BASE/inference-2022-10-27-e12/dataset.test
+OUT_DIR=$BASE/matching_output_tmp
 
 source $BASE/venv/bin/activate
 export PATH="$BASE/venv/bin:$PATH"
-
-INDEX_SEARCH_SCRIPT=$BASE/src/matching/index_search_bib_parallel.py
-INDEX_DIR=$BASE/data/index
-INFERENCE_PATH=$BASE/inference-2022-10-27-e12/dataset.all
-OUT_DIR=$BASE/matching_output_tmp
 
 mkdir -p $OUT_DIR
 

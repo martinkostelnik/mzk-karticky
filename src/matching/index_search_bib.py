@@ -122,8 +122,8 @@ def match_candidate(ocr: str, db: dict) -> list:
 
             if lowest:
                 fields.append({"label": label, "text": lowest.matched, "from": lowest.start, "to": lowest.end})
-                total_dist += lowest.dist / len(entry)
-
+                total_dist += lowest.dist / max_dist
+    old_l = len(fields)
     try:
         fields = correct_overlaps(fields)
     except:
@@ -139,7 +139,7 @@ def match_candidate(ocr: str, db: dict) -> list:
     if not fields:
         return [], 999999999
 
-    return fields, total_dist / len(fields)
+    return fields, total_dist / old_l
 
 
 def parse_alignments(alignments, ocr):
@@ -210,11 +210,8 @@ def process_file(line, args):
         candidate_alignments = []
         # match_scores = []
         for candidate_db in candidate_dbs:
-            aligss, candidate_total_dist = match_candidate(ocr, candidate_db)
-            if not len(aligss):
-                candidate_alignments.append((aligss, 999999999))
-            else:
-                candidate_alignments.append((aligss, candidate_total_dist))
+            aligs_list, candidate_total_dist = match_candidate(ocr, candidate_db)
+            candidate_alignments.append((aligs_list, candidate_total_dist))
 
         # candidate_alignments = [match_candidate(ocr, candidate_db) for candidate_db in candidate_dbs] # [[alignments..], [alignments..], ..]
         # match_scores = [len(candidate_alignment) for candidate_alignment in candidate_alignments]
@@ -222,14 +219,14 @@ def process_file(line, args):
         if not len(candidate_alignments):
             return None, None
 
-        candidate_alignments = [aligs for aligs in candidate_alignments if len(aligs[0]) >= args.min_matched_lines]
-        match_scores = [val[1] for val in candidate_alignments]
-        candidate_alignments = [val[0] for val in candidate_alignments]
-       
-        if not len(candidate_alignments):
+        max_aligned = np.max([len(aligs[0]) for aligs in candidate_alignments])
+        if max_aligned < args.min_matched_lines:
             print(f"Not enough matches found for file {file_path} (must be higher than {args.min_matched_lines})")
             return None, None
-        
+
+        candidate_alignments = [aligs for aligs in candidate_alignments if len(aligs[0]) == max_aligned]
+        match_scores = [val[1] for val in candidate_alignments]
+        candidate_alignments = [val[0] for val in candidate_alignments]
 
         ##########################################################################
         ###############################DEBUG######################################
@@ -246,7 +243,7 @@ def process_file(line, args):
         best_candidate_aligned = len(best_candidate_alignment)
 
         # if best_candidate_aligned >= args.min_matched_lines:
-        print(f"Best match for file {file_path} is {best_candidate_id} with score: {np.min(match_scores)}, aligned: {len(best_candidate_alignment)}")
+        print(f"Best match for file {file_path} is {best_candidate_id} with score: {np.min(match_scores)}, aligned: {best_candidate_aligned}")
 
         matching_output = f"{file_path}\t{best_candidate_id}\t{best_candidate_aligned}\n"
         
