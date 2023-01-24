@@ -20,6 +20,17 @@ from tokenizers import normalizers
 from tokenizers.normalizers import NFD, StripAccents, Lowercase
 
 
+"""
+    1. Read inference file
+    2. For each line (file) in inference file, process it
+    3. Split line into <filename> and <alignments>
+    4. Retrieve OCR from OCR LMDB and normalize it
+    5. Parse <alignments> into suitable data structure
+    6. Open Index Searcher Context
+    7. Find candidate DB ids.
+        7.1 
+"""
+
 def parse_arguments():
     parser = argparse.ArgumentParser()
 
@@ -41,7 +52,8 @@ def get_max_dist(text, threshold=0.25, limit=6):
     if len(text) < 11:
         return 2
 
-    return min(int(len(text) * threshold), limit)
+    return min(int(len(text) * 0.6), 12)
+    # return min(int(len(text) * threshold), limit)
 
 
 @timeout(180)
@@ -201,32 +213,29 @@ def process_file(line, args):
             print(f"Timeout reached on file {file_path}, skipping")
             return None, None
 
-        candidate_dbs = []
-        for candidate in candidates:
-            bib_string = bib_txn.get(candidate["record_id"].encode()).decode()
-            bib_dict = parse_bib_string(bib_string)
-            candidate_dbs.append(bib_dict)
+        candidates = [candidate["record_id"] for candidate in candidates]
 
         candidate_alignments = []
-        # match_scores = []
-        for candidate_db in candidate_dbs:
-            aligs_list, candidate_total_dist = match_candidate(ocr, candidate_db)
-            candidate_alignments.append((aligs_list, candidate_total_dist))
-
-        # candidate_alignments = [match_candidate(ocr, candidate_db) for candidate_db in candidate_dbs] # [[alignments..], [alignments..], ..]
-        # match_scores = [len(candidate_alignment) for candidate_alignment in candidate_alignments]
+        for candidate in candidates:
+            bib_string = bib_txn.get(candidate.encode()).decode()
+            bib_dict = parse_bib_string(bib_string)
+        
+            aligs_list, candidate_total_dist = match_candidate(ocr, bib_dict)
+            candidate_alignments.append((candidate, aligs_list, candidate_total_dist))
 
         if not len(candidate_alignments):
             return None, None
 
-        max_aligned = np.max([len(aligs[0]) for aligs in candidate_alignments])
+        max_aligned = np.max([len(aligs[1]) for aligs in candidate_alignments])
         if max_aligned < args.min_matched_lines:
             print(f"Not enough matches found for file {file_path} (must be higher than {args.min_matched_lines})")
             return None, None
+        
+        candidate_alignments = [aligs for aligs in candidate_alignments if len(aligs[1]) == max_aligned]
 
-        candidate_alignments = [aligs for aligs in candidate_alignments if len(aligs[0]) == max_aligned]
-        match_scores = [val[1] for val in candidate_alignments]
-        candidate_alignments = [val[0] for val in candidate_alignments]
+        candidates = [val[0] for val in candidate_alignments]
+        match_scores = [val[2] for val in candidate_alignments]
+        candidate_alignments = [val[1] for val in candidate_alignments]
 
         ##########################################################################
         ###############################DEBUG######################################
@@ -237,12 +246,10 @@ def process_file(line, args):
         ##########################################################################
 
         best_candidate_idx = np.argmin(match_scores)
-        #best_candidate_idx = np.argmax(match_scores)
-        best_candidate_id = candidates[best_candidate_idx]['record_id']
+        best_candidate_id = candidates[best_candidate_idx]
         best_candidate_alignment = candidate_alignments[best_candidate_idx]
         best_candidate_aligned = len(best_candidate_alignment)
 
-        # if best_candidate_aligned >= args.min_matched_lines:
         print(f"Best match for file {file_path} is {best_candidate_id} with score: {np.min(match_scores)}, aligned: {best_candidate_aligned}")
 
         matching_output = f"{file_path}\t{best_candidate_id}\t{best_candidate_aligned}\n"
@@ -254,9 +261,6 @@ def process_file(line, args):
         alignment_output += "\n"
 
         return matching_output, alignment_output
-        # else:
-        #     print(f"Not enough matches found for file {file_path} (must be higher than {args.min_matched_lines}, was {best_candidate_aligned})")
-        #     return None, None
 
 
 def main() -> int:
@@ -275,7 +279,6 @@ def main() -> int:
         
     # DEBUG: SELECT RANDOM INDEX TO START FROM AND TAKE ONLY 10 
     # idx = random.randint(0, 2e6)                             ##
-    # idx = 601728
     # inference_lines = inference_lines[idx:idx + 10]          ##
     # print(f"SEED = {idx}")                                   ##
     ###########################################################
