@@ -52,7 +52,7 @@ def get_max_dist(text, threshold=0.25, limit=6):
     if len(text) < 11:
         return 2
 
-    return min(int(len(text) * 0.6), 12)
+    return min(int(len(text) * threshold), 12)
     # return min(int(len(text) * threshold), limit)
 
 
@@ -72,7 +72,7 @@ def search_phrase(searcher, alignments):
 
     query = whoosh.query.Or(fuzzy_terms)
     # print(query)
-    return searcher.search(query, limit=None)
+    return searcher.search(query, limit=2500)
 
 
 # def ocr_line_acceptable(line):
